@@ -12,7 +12,7 @@ from pathlib import Path
 lib_dir = (Path(__file__).parent / '..' / '..' / 'lib').resolve()
 if str(lib_dir) not in sys.path: sys.path.insert(0, str(lib_dir))
 from config_utils import load_config, dict2config, configure2str
-from datasets     import get_datasets, SearchDataset
+from datasets     import get_datasets, get_nas_search_loaders
 from procedures   import prepare_seed, prepare_logger, save_checkpoint, copy_checkpoint, get_optim_scheduler
 from utils        import get_model_infos, obtain_accuracy
 from log_utils    import AverageMeter, time_string, convert_secs2time
@@ -169,35 +169,16 @@ def main(xargs):
   logger = prepare_logger(args)
 
   train_data, valid_data, xshape, class_num = get_datasets(xargs.dataset, xargs.data_path, -1)
-  if xargs.dataset == 'cifar10' or xargs.dataset == 'cifar100':
-    split_Fpath = 'configs/nas-benchmark/cifar-split.txt'
-    cifar_split = load_config(split_Fpath, None, None)
-    train_split, valid_split = cifar_split.train, cifar_split.valid
-    logger.log('Load split file from {:}'.format(split_Fpath))
-  elif xargs.dataset.startswith('ImageNet16'):
-    split_Fpath = 'configs/nas-benchmark/{:}-split.txt'.format(xargs.dataset)
-    imagenet16_split = load_config(split_Fpath, None, None)
-    train_split, valid_split = imagenet16_split.train, imagenet16_split.valid
-    logger.log('Load split file from {:}'.format(split_Fpath))
-  else:
-    raise ValueError('invalid dataset : {:}'.format(xargs.dataset))
-  #config_path = 'configs/nas-benchmark/algos/DARTS.config'
   config = load_config(xargs.config_path, {'class_num': class_num, 'xshape': xshape}, logger)
-  # To split data
-  train_data_v2 = deepcopy(train_data)
-  train_data_v2.transform = valid_data.transform
-  valid_data    = train_data_v2
-  search_data   = SearchDataset(xargs.dataset, train_data, train_split, valid_split)
-  # data loader
-  search_loader = torch.utils.data.DataLoader(search_data, batch_size=config.batch_size, shuffle=True , num_workers=xargs.workers, pin_memory=True)
-  valid_loader  = torch.utils.data.DataLoader(valid_data, batch_size=config.batch_size, sampler=torch.utils.data.sampler.SubsetRandomSampler(valid_split), num_workers=xargs.workers, pin_memory=True)
+  search_loader, _, valid_loader = get_nas_search_loaders(train_data, valid_data, xargs.dataset, 'configs/nas-benchmark/', config.batch_size, xargs.workers)
   logger.log('||||||| {:10s} ||||||| Search-Loader-Num={:}, Valid-Loader-Num={:}, batch size={:}'.format(xargs.dataset, len(search_loader), len(valid_loader), config.batch_size))
   logger.log('||||||| {:10s} ||||||| Config={:}'.format(xargs.dataset, config))
 
   search_space = get_search_spaces('cell', xargs.search_space_name)
   model_config = dict2config({'name': 'DARTS-V2', 'C': xargs.channel, 'N': xargs.num_cells,
                               'max_nodes': xargs.max_nodes, 'num_classes': class_num,
-                              'space'    : search_space}, None)
+                              'space'    : search_space,
+                              'affine'   : False, 'track_running_stats': bool(xargs.track_running_stats)}, None)
   search_model = get_cell_based_tiny_net(model_config)
   logger.log('search-model :\n{:}'.format(search_model))
   
@@ -302,6 +283,7 @@ if __name__ == '__main__':
   parser.add_argument('--max_nodes',          type=int,   help='The maximum number of nodes.')
   parser.add_argument('--channel',            type=int,   help='The number of channels.')
   parser.add_argument('--num_cells',          type=int,   help='The number of cells in one stage.')
+  parser.add_argument('--track_running_stats',type=int,   choices=[0,1],help='Whether use track_running_stats or not in the BN layer.')
   # architecture leraning rate
   parser.add_argument('--arch_learning_rate', type=float, default=3e-4, help='learning rate for arch encoding')
   parser.add_argument('--arch_weight_decay',  type=float, default=1e-3, help='weight decay for arch encoding')

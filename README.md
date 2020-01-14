@@ -15,7 +15,7 @@ More NAS resources can be found in [Awesome-NAS](https://github.com/D-X-Y/Awesom
 
 Please install `PyTorch>=1.2.0`, `Python>=3.6`, and `opencv`.
 
-The CIFAR and ImageNet should be downloaded and extracted into `$TORCH_HOME`.
+CIFAR and ImageNet should be downloaded and extracted into `$TORCH_HOME`.
 Some methods use knowledge distillation (KD), which require pre-trained models. Please download these models from [Google Driver](https://drive.google.com/open?id=1ANmiYEGX-IQZTfH8w0aSpj-Wypg-0DR-) (or train by yourself) and save into `.latent-data`.
 
 ### Usefull tools
@@ -33,6 +33,8 @@ flop, param  = get_model_infos(net, (1,3,32,32))
 We build a new benchmark for neural architecture search, please see more details in [NAS-Bench-102.md](https://github.com/D-X-Y/NAS-Projects/blob/master/NAS-Bench-102.md).
 
 The benchmark data file (v1.0) is `NAS-Bench-102-v1_0-e61699.pth`, which can be downloaded from [Google Drive](https://drive.google.com/open?id=1SKW0Cu0u8-gb18zDpaAGi0f74UdXeGKs).
+
+Now you can simply use our API by `pip install nas-bench-102`.
 
 ## [Network Pruning via Transformable Architecture Search](https://arxiv.org/abs/1905.09717)
 [![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/network-pruning-via-transformable/network-pruning-on-cifar-100)](https://paperswithcode.com/sota/network-pruning-on-cifar-100?p=network-pruning-via-transformable)
@@ -120,6 +122,12 @@ CUDA_VISIBLE_DEVICES=0 bash ./scripts/nas-infer-train.sh cifar100 GDAS_V1 96 -1
 CUDA_VISIBLE_DEVICES=0,1,2,3 bash ./scripts/nas-infer-train.sh imagenet-1k GDAS_V1 256 -1
 ```
 
+#### Searching on the NASNet search space
+Please use the following scripts to use GDAS to search as in the original paper:
+```
+CUDA_VISIBLE_DEVICES=0 bash ./scripts-search/GDAS-search-NASNet-space.sh cifar10 1 -1
+```
+
 #### Searching on a small search space (NAS-Bench-102)
 The GDAS searching codes on a small search space:
 ```
@@ -148,6 +156,7 @@ If you find that this project helps your research, please consider citing some o
   title     = {NAS-Bench-102: Extending the Scope of Reproducible Neural Architecture Search},
   author    = {Dong, Xuanyi and Yang, Yi},
   booktitle = {International Conference on Learning Representations (ICLR)},
+  url       = {https://openreview.net/forum?id=HJxyZkBKDr},
   year      = {2020}
 }
 @inproceedings{dong2019tas,
