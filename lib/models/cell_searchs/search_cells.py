@@ -116,5 +116,6 @@ class SearchCell(nn.Module):
         node_str = '{:}<-{:}'.format(i, j)
         op_index = self.op_names.index( op_name )
         inter_nodes.append( self.edges[node_str][op_index]( nodes[j] ) )
-      nodes.append( sum(inter_nodes) )
+      # nodes.append( sum(inter_nodes) )
+      nodes.append( sum(inter_nodes) / len(inter_nodes) )
     return nodes[-1]

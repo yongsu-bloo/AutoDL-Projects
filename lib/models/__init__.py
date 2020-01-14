@@ -5,13 +5,15 @@ from os import path as osp
 
 __all__ = ['change_key', 'get_cell_based_tiny_net', 'get_search_spaces', 'get_cifar_models', 'get_imagenet_models', \
            'obtain_model', 'obtain_search_model', 'load_net_from_checkpoint', \
-           'CellStructure', 'CellArchitectures'
+           'CellStructure', 'CellArchitectures',
+           "FeatureMatching"
            ]
 
 # useful modules
 from config_utils import dict2config
 from .SharedUtils import change_key
 from .cell_searchs import CellStructure, CellArchitectures
+from .fitnet_model import FeatureMatching
 
 # Cell-based NAS Models
 def get_cell_based_tiny_net(config):
@@ -48,7 +50,7 @@ def get_cifar_models(config):
   from .CifarResNet      import CifarResNet
   from .CifarDenseNet    import DenseNet
   from .CifarWideResNet  import CifarWideResNet
-  
+
   super_type = getattr(config, 'super_type', 'basic')
   if super_type == 'basic':
     if config.arch == 'resnet':

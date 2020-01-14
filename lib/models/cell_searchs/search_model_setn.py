@@ -10,7 +10,6 @@ from ..cell_operations import ResNetBasicblock
 from .search_cells     import SearchCell
 from .genotypes        import Structure
 
-
 class TinyNetworkSETN(nn.Module):
 
   def __init__(self, C, N, max_nodes, num_classes, search_space, affine, track_running_stats):
@@ -21,8 +20,8 @@ class TinyNetworkSETN(nn.Module):
     self.stem = nn.Sequential(
                     nn.Conv2d(3, C, kernel_size=3, padding=1, bias=False),
                     nn.BatchNorm2d(C))
-  
-    layer_channels   = [C    ] * N + [C*2 ] + [C*2  ] * N + [C*4 ] + [C*4  ] * N    
+
+    layer_channels   = [C    ] * N + [C*2 ] + [C*2  ] * N + [C*4 ] + [C*4  ] * N
     layer_reductions = [False] * N + [True] + [False] * N + [True] + [False] * N
 
     C_prev, num_edge, edge2index = C, None, None
@@ -45,7 +44,21 @@ class TinyNetworkSETN(nn.Module):
     self.arch_parameters = nn.Parameter( 1e-3*torch.randn(num_edge, len(search_space)) )
     self.mode       = 'urs'
     self.dynamic_cell = None
-    
+
+    def weights_init(m):
+        if isinstance(m, nn.Conv2d):
+            nn.init.uniform_(m.weight, -0.05, 0.05)
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+        elif isinstance(m, nn.Linear):
+            nn.init.normal_(m.weight, 0, 0.01)
+            nn.init.constant_(m.bias, 0)
+        # elif isinstance(m, nn.BatchNorm2d):
+        #     nn.init.constant_(m.weight, 1)
+        #     if m.bias is not None:
+        #         nn.init.constant_(m.bias, 0)
+
+    self.apply(weights_init)
   def set_cal_mode(self, mode, dynamic_cell=None):
     assert mode in ['urs', 'joint', 'select', 'dynamic']
     self.mode = mode
@@ -125,7 +138,37 @@ class TinyNetworkSETN(nn.Module):
     return return_pairs
 
 
-  def forward(self, inputs):
+  def forward_for_outs(self, inputs, out_all=False): ###
+    alphas  = nn.functional.softmax(self.arch_parameters, dim=-1)
+    with torch.no_grad():
+      alphas_cpu = alphas.detach().cpu()
+    all_outs = [] ###
+    feature = self.stem(inputs)
+    # all_outs.append(feature) ###
+    for i, cell in enumerate(self.cells):
+      if isinstance(cell, SearchCell):
+        if self.mode == 'urs':
+          feature = cell.forward_urs(feature)
+        elif self.mode == 'select':
+          feature = cell.forward_select(feature, alphas_cpu)
+        elif self.mode == 'joint':
+          feature = cell.forward_joint(feature, alphas)
+        elif self.mode == 'dynamic':
+          feature = cell.forward_dynamic(feature, self.dynamic_cell)
+        else: raise ValueError('invalid mode={:}'.format(self.mode))
+      else: feature = cell(feature)
+      all_outs.append(feature) ###
+
+    out = self.lastact(feature)
+    # all_outs[-1] = out ###
+    out = self.global_pooling( out )
+    out = out.view(out.size(0), -1)
+    logits = self.classifier(out)
+    return out, logits, all_outs
+
+  def forward(self, inputs, out_all=False):
+    if out_all:
+        return self.forward_for_outs(inputs, out_all)
     alphas  = nn.functional.softmax(self.arch_parameters, dim=-1)
     with torch.no_grad():
       alphas_cpu = alphas.detach().cpu()
