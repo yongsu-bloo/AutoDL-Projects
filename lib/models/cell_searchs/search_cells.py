@@ -44,7 +44,8 @@ class NAS102SearchCell(nn.Module):
         node_str = '{:}<-{:}'.format(i, j)
         weights  = weightss[ self.edge2index[node_str] ]
         inter_nodes.append( sum( layer(nodes[j]) * w for layer, w in zip(self.edges[node_str], weights) ) )
-      nodes.append( sum(inter_nodes) )
+      # nodes.append( sum(inter_nodes) )
+      nodes.append( sum(inter_nodes) / len(inter_nodes) )
     return nodes[-1]
 
   # GDAS
@@ -58,7 +59,8 @@ class NAS102SearchCell(nn.Module):
         argmaxs  = index[ self.edge2index[node_str] ].item()
         weigsum  = sum( weights[_ie] * edge(nodes[j]) if _ie == argmaxs else weights[_ie] for _ie, edge in enumerate(self.edges[node_str]) )
         inter_nodes.append( weigsum )
-      nodes.append( sum(inter_nodes) )
+      # nodes.append( sum(inter_nodes) )
+      nodes.append( sum(inter_nodes) / len(inter_nodes) )
     return nodes[-1]
 
   # joint
@@ -72,7 +74,8 @@ class NAS102SearchCell(nn.Module):
         #aggregation = sum( layer(nodes[j]) * w for layer, w in zip(self.edges[node_str], weights) ) / weights.numel()
         aggregation = sum( layer(nodes[j]) * w for layer, w in zip(self.edges[node_str], weights) )
         inter_nodes.append( aggregation )
-      nodes.append( sum(inter_nodes) )
+      # nodes.append( sum(inter_nodes) )
+      nodes.append( sum(inter_nodes) / len(inter_nodes) )
     return nodes[-1]
 
   # uniform random sampling per iteration, SETN
@@ -91,7 +94,8 @@ class NAS102SearchCell(nn.Module):
       inter_nodes = []
       for j, select_op in enumerate(sops):
         inter_nodes.append( select_op(nodes[j]) )
-      nodes.append( sum(inter_nodes) )
+      # nodes.append( sum(inter_nodes) )
+      nodes.append( sum(inter_nodes) / len(inter_nodes) )
     return nodes[-1]
 
   # select the argmax
@@ -104,7 +108,8 @@ class NAS102SearchCell(nn.Module):
         weights  = weightss[ self.edge2index[node_str] ]
         inter_nodes.append( self.edges[node_str][ weights.argmax().item() ]( nodes[j] ) )
         #inter_nodes.append( sum( layer(nodes[j]) * w for layer, w in zip(self.edges[node_str], weights) ) )
-      nodes.append( sum(inter_nodes) )
+      # nodes.append( sum(inter_nodes) )
+      nodes.append( sum(inter_nodes) / len(inter_nodes) )
     return nodes[-1]
 
   # forward with a specific structure

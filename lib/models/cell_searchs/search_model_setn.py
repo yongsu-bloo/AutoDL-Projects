@@ -138,7 +138,7 @@ class TinyNetworkSETN(nn.Module):
     return return_pairs
 
 
-  def forward_for_outs(self, inputs, out_all=False): ###
+  def forward_for_outs(self, inputs): ###
     alphas  = nn.functional.softmax(self.arch_parameters, dim=-1)
     with torch.no_grad():
       alphas_cpu = alphas.detach().cpu()
@@ -168,7 +168,7 @@ class TinyNetworkSETN(nn.Module):
 
   def forward(self, inputs, out_all=False):
     if out_all:
-        return self.forward_for_outs(inputs, out_all)
+        return self.forward_for_outs(inputs)
     alphas  = nn.functional.softmax(self.arch_parameters, dim=-1)
     with torch.no_grad():
       alphas_cpu = alphas.detach().cpu()
