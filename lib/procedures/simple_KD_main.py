@@ -8,8 +8,8 @@ from log_utils import AverageMeter, time_string
 from utils     import obtain_accuracy
 
 
-def simple_KD_train(xloader, teacher, network, criterion, scheduler, optimizer, optim_config, extra_info, print_freq, logger):
-  loss, acc1, acc5 = procedure(xloader, teacher, network, criterion, scheduler, optimizer, 'train', optim_config, extra_info, print_freq, logger)
+def simple_KD_train(xloader, teacher, network, criterion, scheduler, optimizer, optim_config, extra_info, print_freq, logger, kd_coef=1.):
+  loss, acc1, acc5 = procedure(xloader, teacher, network, criterion, scheduler, optimizer, 'train', optim_config, extra_info, print_freq, logger, kd_coef)
   return loss, acc1, acc5
 
 def simple_KD_valid(xloader, teacher, network, criterion, optim_config, extra_info, print_freq, logger):
@@ -18,15 +18,15 @@ def simple_KD_valid(xloader, teacher, network, criterion, optim_config, extra_in
   return loss, acc1, acc5
 
 
-def loss_KD_fn(criterion, student_logits, teacher_logits, studentFeatures, teacherFeatures, targets, alpha, temperature):
+def loss_KD_fn(criterion, student_logits, teacher_logits, studentFeatures, teacherFeatures, targets, alpha, temperature, kd_coef=1.):
   basic_loss = criterion(student_logits, targets) * (1. - alpha)
   log_student= F.log_softmax(student_logits / temperature, dim=1)
   sof_teacher= F.softmax    (teacher_logits / temperature, dim=1)
   KD_loss    = F.kl_div(log_student, sof_teacher, reduction='batchmean') * (alpha * temperature * temperature)
-  return basic_loss + KD_loss
+  return basic_loss + kd_coef * KD_loss
 
 
-def procedure(xloader, teacher, network, criterion, scheduler, optimizer, mode, config, extra_info, print_freq, logger):
+def procedure(xloader, teacher, network, criterion, scheduler, optimizer, mode, config, extra_info, print_freq, logger, kd_coef=1):
   data_time, batch_time, losses, top1, top5 = AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter()
   Ttop1, Ttop5 = AverageMeter(), AverageMeter()
   if mode == 'train':
@@ -35,7 +35,7 @@ def procedure(xloader, teacher, network, criterion, scheduler, optimizer, mode, 
     network.eval()
   else: raise ValueError("The mode is not right : {:}".format(mode))
   teacher.eval()
-  
+
   logger.log('[{:5s}] config :: auxiliary={:}, KD :: [alpha={:.2f}, temperature={:.2f}]'.format(mode, config.auxiliary if hasattr(config, 'auxiliary') else -1, config.KD_alpha, config.KD_temperature))
   end = time.time()
   for i, (inputs, targets) in enumerate(xloader):
@@ -56,11 +56,11 @@ def procedure(xloader, teacher, network, criterion, scheduler, optimizer, mode, 
     with torch.no_grad():
       teacher_f, teacher_logits = teacher(inputs)
 
-    loss             = loss_KD_fn(criterion, logits, teacher_logits, student_f, teacher_f, targets, config.KD_alpha, config.KD_temperature)
+    loss             = loss_KD_fn(criterion, logits, teacher_logits, student_f, teacher_f, targets, config.KD_alpha, config.KD_temperature, kd_coef)
     if config is not None and hasattr(config, 'auxiliary') and config.auxiliary > 0:
       loss_aux = criterion(logits_aux, targets)
       loss += config.auxiliary * loss_aux
-    
+
     if mode == 'train':
       loss.backward()
       optimizer.step()
