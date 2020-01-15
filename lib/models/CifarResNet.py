@@ -5,14 +5,14 @@ from .initialization import initialize_resnet
 from .SharedUtils    import additive_func
 
 
-class Downsample(nn.Module):  
+class Downsample(nn.Module):
 
   def __init__(self, nIn, nOut, stride):
-    super(Downsample, self).__init__() 
+    super(Downsample, self).__init__()
     assert stride == 2 and nOut == 2*nIn, 'stride:{} IO:{},{}'.format(stride, nIn, nOut)
     self.in_dim  = nIn
     self.out_dim = nOut
-    self.avg  = nn.AvgPool2d(kernel_size=2, stride=2, padding=0)   
+    self.avg  = nn.AvgPool2d(kernel_size=2, stride=2, padding=0)
     self.conv = nn.Conv2d(nIn, nOut, kernel_size=1, stride=1, padding=0, bias=False)
 
   def forward(self, x):
@@ -22,7 +22,7 @@ class Downsample(nn.Module):
 
 
 class ConvBNReLU(nn.Module):
-  
+
   def __init__(self, nIn, nOut, kernel, stride, padding, bias, relu):
     super(ConvBNReLU, self).__init__()
     self.conv = nn.Conv2d(nIn, nOut, kernel_size=kernel, stride=stride, padding=padding, bias=bias)
@@ -147,7 +147,20 @@ class CifarResNet(nn.Module):
   def get_message(self):
     return self.message
 
-  def forward(self, inputs):
+  def forward_for_outs(self, inputs):
+      x = inputs
+      all_outs = []
+      for i, layer in enumerate(self.layers):
+        x = layer( x )
+        all_outs.append(x)
+      features = self.avgpool(x)
+      features = features.view(features.size(0), -1)
+      logits   = self.classifier(features)
+      return features, logits, all_outs
+
+  def forward(self, inputs, out_all=False):
+    if out_all:
+        return self.forward_for_outs(inputs)
     x = inputs
     for i, layer in enumerate(self.layers):
       x = layer( x )

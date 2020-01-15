@@ -9,14 +9,17 @@ def get_procedures(procedure):
   from .search_main    import search_train, search_valid
   from .search_main_v2 import search_train_v2
   from .simple_KD_main import simple_KD_train, simple_KD_valid
+  from .fitnet_main import fitnet_train, fitnet_valid
 
   train_funcs = {'basic' : basic_train, \
                  'search': search_train,'Simple-KD': simple_KD_train, \
-                 'search-v2': search_train_v2}
+                 'search-v2': search_train_v2, \
+                 'fitnet': fitnet_train}
   valid_funcs = {'basic' : basic_valid, \
                  'search': search_valid,'Simple-KD': simple_KD_valid, \
-                 'search-v2': search_valid}
-  
+                 'search-v2': search_valid,    \
+                 'fitnet': fitnet_valid}
+
   train_func  = train_funcs[procedure]
   valid_func  = valid_funcs[procedure]
   return train_func, valid_func
