@@ -19,7 +19,7 @@ from procedures   import prepare_seed, prepare_logger, save_checkpoint, copy_che
 from utils        import get_model_infos, obtain_accuracy
 from log_utils    import AverageMeter, time_string, convert_secs2time, write_results
 from models       import get_cell_based_tiny_net, get_search_spaces, load_net_from_checkpoint, FeatureMatching, CellStructure as Structure
-from nas_102_api  import NASBench102API as API
+from nas_201_api  import NASBench201API as API
 
 def get_lr(optimizer):
     for param_group in optimizer.param_groups:

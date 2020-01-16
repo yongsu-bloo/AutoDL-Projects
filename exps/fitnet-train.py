@@ -332,7 +332,7 @@ if __name__ == '__main__':
   parser.add_argument('--resume'      ,     type=str,                   help='Resume path.')
   parser.add_argument('--init_model'  ,     type=str,                   help='The initialization model path.')
   # Save and Load
-  parser.add_argument('--save_dir',           type=str,   default="./output/sample-train",     help='Folder to save checkpoints and log.')
+  parser.add_argument('--save_dir',           type=str,   default="./output/transfer-train",     help='Folder to save checkpoints and log.')
   parser.add_argument('--dataset',            type=str,   default='cifar10', choices=['cifar10', 'cifar100', 'ImageNet16-120'], help='Choose between Cifar10/100 and ImageNet-16.')
   parser.add_argument('--data_path',          type=str,   default=os.environ['TORCH_HOME'] + "/cifar.python", help='Path to dataset')
   parser.add_argument('--cutout_length',    type=int,     default=-1,      help='The cutout length, negative means not use.')
