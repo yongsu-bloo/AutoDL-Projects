@@ -45,7 +45,6 @@ def search_func(xloader, network, criterion, scheduler, w_optimizer, a_optimizer
     sampled_arch = network.module.dync_genotype(True) # uniform sampling
     network.module.set_cal_mode('dynamic', sampled_arch)
     #network.module.set_cal_mode( 'urs' )
-    # w_optimizer.zero_grad()
     network.zero_grad()
     if teacher is not None:
         matching_layers.zero_grad()
@@ -58,12 +57,6 @@ def search_func(xloader, network, criterion, scheduler, w_optimizer, a_optimizer
 
         matching_loss = matching_layers(t_outs, st_outs)
         base_loss = torch.mean(matching_loss)
-        # base_loss2 = criterion(logits, base_targets)
-        # print(base_loss2.item())
-        # if step < 30:
-        #     base_loss = base_loss2
-        # else:
-        #     print("--")
     else:
         base_loss = criterion(logits, base_targets)
     # print(base_loss.item())
@@ -78,7 +71,6 @@ def search_func(xloader, network, criterion, scheduler, w_optimizer, a_optimizer
 
     # update the architecture-weight
     network.module.set_cal_mode( 'joint' )
-    # a_optimizer.zero_grad()
     network.zero_grad()
     if teacher is not None:
         matching_layers.eval()

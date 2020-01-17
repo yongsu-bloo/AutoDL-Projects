@@ -45,7 +45,6 @@ def search_func(xloader, network, criterion, scheduler, w_optimizer, a_optimizer
     sampled_arch = network.module.dync_genotype(True) # uniform sampling
     network.module.set_cal_mode('dynamic', sampled_arch)
     #network.module.set_cal_mode( 'urs' )
-    # w_optimizer.zero_grad()
     network.zero_grad()
     if teacher is not None:
         matching_layers.zero_grad()
@@ -55,18 +54,10 @@ def search_func(xloader, network, criterion, scheduler, w_optimizer, a_optimizer
     if teacher is not None:
         with torch.no_grad():
             _, t_logits, t_outs = teacher(base_inputs, out_all=True)
-
         matching_loss = matching_layers(t_outs, st_outs)
         base_loss = torch.mean(matching_loss)
-        # base_loss2 = criterion(logits, base_targets)
-        # print(base_loss2.item())
-        # if step < 30:
-        #     base_loss = base_loss2
-        # else:
-        #     print("--")
     else:
         base_loss = criterion(logits, base_targets)
-    # print(base_loss.item())
     base_loss.backward()
     w_optimizer.step()
     # record
@@ -79,18 +70,9 @@ def search_func(xloader, network, criterion, scheduler, w_optimizer, a_optimizer
     # update the architecture-weight
     if teacher is None:
         network.module.set_cal_mode( 'joint' )
-        # a_optimizer.zero_grad()
         network.zero_grad()
-        if teacher is not None:
-            matching_layers.eval()
-            with torch.no_grad():
-                _, t_logits, t_outs = teacher(arch_inputs, True)
-            _, logits, st_outs = network(arch_inputs, True)
-            matching_loss = matching_layers(t_outs, st_outs)
-            arch_loss = torch.mean(matching_loss)
-        else:
-            _, logits = network(arch_inputs)
-            arch_loss = criterion(logits, arch_targets)
+        _, logits = network(arch_inputs)
+        arch_loss = criterion(logits, arch_targets)
 
         arch_loss.backward()
         a_optimizer.step()
@@ -100,8 +82,6 @@ def search_func(xloader, network, criterion, scheduler, w_optimizer, a_optimizer
             arch_top1.update  (arch_prec1.item(), arch_inputs.size(0))
             arch_top5.update  (arch_prec5.item(), arch_inputs.size(0))
         arch_losses.update(arch_loss.item(),  arch_inputs.size(0))
-    else:
-        arch_losses.update(0.,  arch_inputs.size(0))
 
     # measure elapsed time
     batch_time.update(time.time() - end)
@@ -115,7 +95,7 @@ def search_func(xloader, network, criterion, scheduler, w_optimizer, a_optimizer
           Astr = 'Arch [Loss {loss.val:.3f} ({loss.avg:.3f})  Prec@1 {top1.val:.2f} ({top1.avg:.2f}) Prec@5 {top5.val:.2f} ({top5.avg:.2f})]'.format(loss=arch_losses, top1=arch_top1, top5=arch_top5)
       else:
           Wstr = 'Base [Loss {loss.val:.3f} ({loss.avg:.3f})]'.format(loss=base_losses)
-          Astr = 'Arch [Loss {loss.val:.3f} ({loss.avg:.3f})]'.format(loss=arch_losses)
+          Astr = ''
 
       logger.log(Sstr + ' ' + Tstr + ' ' + Wstr + ' ' + Astr)
       #print (nn.functional.softmax(network.module.arch_parameters, dim=-1))
@@ -123,7 +103,7 @@ def search_func(xloader, network, criterion, scheduler, w_optimizer, a_optimizer
   if teacher is None:
       return base_losses.avg, base_top1.avg, base_top5.avg, arch_losses.avg, arch_top1.avg, arch_top5.avg
   else:
-      return base_losses.avg, arch_losses.avg
+      return base_losses.avg
 
 def get_best_arch(xloader, network, n_samples):
   with torch.no_grad():
@@ -312,7 +292,7 @@ def main(xargs):
     epoch_str = '{:03d}-{:03d}'.format(epoch, total_hint_epoch)
     logger.log('\n[Transfer Search the {:}-th epoch] {:}, LR={:}'.format(epoch_str, need_time, min(h_scheduler.get_lr())))
 
-    search_h_loss, search_a_loss \
+    search_h_loss \
                 = search_func(search_loader, network, criterion, h_scheduler, h_optimizer, a_optimizer, epoch_str, xargs.print_freq, logger, teacher, matching_layers)
     transfer_time.update(time.time() - start_time)
     logger.log('[{:}] Transfer search [base] : loss={:.2f}, time-cost={:.1f} s'.format(epoch_str, search_h_loss, transfer_time.sum))
