@@ -21,23 +21,22 @@ from log_utils    import AverageMeter, time_string, convert_secs2time, write_res
 from models       import get_cell_based_tiny_net, get_search_spaces, load_net_from_checkpoint, FeatureMatching, CellStructure as Structure
 from nas_201_api  import NASBench201API as API
 
-def get_lr(optimizer):
-    for param_group in optimizer.param_groups:
-        return param_group['lr']
 
-def search_w_train(xloader, network, criterion, scheduler, w_optimizer, epoch_str, print_freq, logger, teacher=None, matching_layers=None):
+def search_func(xloader, network, criterion, scheduler, w_optimizer, a_optimizer, epoch_str, print_freq, logger, teacher=None, matching_layers=None):
   data_time, batch_time = AverageMeter(), AverageMeter()
-  base_losses = AverageMeter()
+  base_losses, arch_losses = AverageMeter(), AverageMeter()
   if teacher is None:
       base_top1, base_top5 = AverageMeter(), AverageMeter()
+      arch_top1, arch_top5 = AverageMeter(), AverageMeter()
   end = time.time()
   network.train()
   if teacher is not None:
     teacher.eval()
     matching_layers.train()
-  for step, (base_inputs, base_targets, _, _) in enumerate(xloader):
+  for step, (base_inputs, base_targets, arch_inputs, arch_targets) in enumerate(xloader):
     scheduler.update(None, 1.0 * step / len(xloader))
     base_targets = base_targets.cuda(non_blocking=True)
+    arch_targets = arch_targets.cuda(non_blocking=True)
     # measure data loading time
     data_time.update(time.time() - end)
 
@@ -46,7 +45,6 @@ def search_w_train(xloader, network, criterion, scheduler, w_optimizer, epoch_st
     sampled_arch = network.module.dync_genotype(True) # uniform sampling
     network.module.set_cal_mode('dynamic', sampled_arch)
     #network.module.set_cal_mode( 'urs' )
-    # w_optimizer.zero_grad()
     network.zero_grad()
     if teacher is not None:
         matching_layers.zero_grad()
@@ -56,7 +54,6 @@ def search_w_train(xloader, network, criterion, scheduler, w_optimizer, epoch_st
     if teacher is not None:
         with torch.no_grad():
             _, t_logits, t_outs = teacher(base_inputs, out_all=True)
-
         matching_loss = matching_layers(t_outs, st_outs)
         base_loss = torch.mean(matching_loss)
     else:
@@ -70,83 +67,43 @@ def search_w_train(xloader, network, criterion, scheduler, w_optimizer, epoch_st
         base_top5.update  (base_prec5.item(), base_inputs.size(0))
     base_losses.update(base_loss.item(),  base_inputs.size(0))
 
-    # measure elapsed time
-    batch_time.update(time.time() - end)
-    end = time.time()
-
-    if step % print_freq == 0 or step + 1 == len(xloader):
-      Sstr = '*SEARCH w* ' + time_string() + ' [{:}][{:03d}/{:03d}]'.format(epoch_str, step, len(xloader))
-      Tstr = 'Time {batch_time.val:.2f} ({batch_time.avg:.2f}) Data {data_time.val:.2f} ({data_time.avg:.2f})'.format(batch_time=batch_time, data_time=data_time)
-      if teacher is None:
-          Wstr = 'Base [Loss {loss.val:.3f} ({loss.avg:.3f})  Prec@1 {top1.val:.2f} ({top1.avg:.2f}) Prec@5 {top5.val:.2f} ({top5.avg:.2f})]'.format(loss=base_losses, top1=base_top1, top5=base_top5)
-      else:
-          Wstr = 'Base [Loss {loss.val:.3f} ({loss.avg:.3f})]'.format(loss=base_losses)
-
-      logger.log(Sstr + ' ' + Tstr + ' ' + Wstr)
-  if teacher is None:
-      return base_losses.avg, base_top1.avg, base_top5.avg
-  else:
-      return base_losses.avg
-
-def search_a_train(xloader, network, criterion, a_optimizer, epoch_str, print_freq, logger, teacher=None, matching_layers=None):
-  data_time, batch_time = AverageMeter(), AverageMeter()
-  arch_losses = AverageMeter()
-  if teacher is None:
-      arch_top1, arch_top5 = AverageMeter(), AverageMeter()
-  end = time.time()
-  network.train()
-  if teacher is not None:
-    teacher.eval()
-    matching_layers.eval()
-  for step, (_, _, arch_inputs, arch_targets) in enumerate(xloader):
-    arch_targets = arch_targets.cuda(non_blocking=True)
-    # measure data loading time
-    data_time.update(time.time() - end)
-
     # update the architecture-weight
-    network.module.set_cal_mode( 'joint' )
-    # a_optimizer.zero_grad()
-    network.zero_grad()
-    if teacher is not None:
-        matching_layers.eval()
-        with torch.no_grad():
-            _, t_logits, t_outs = teacher(arch_inputs, True)
-        _, logits, st_outs = network(arch_inputs, True)
-        matching_loss = matching_layers(t_outs, st_outs)
-        arch_loss = torch.mean(matching_loss)
-    else:
+    if teacher is None:
+        network.module.set_cal_mode( 'joint' )
+        network.zero_grad()
         _, logits = network(arch_inputs)
         arch_loss = criterion(logits, arch_targets)
 
-    arch_loss.backward()
-    a_optimizer.step()
-    # record
-    if teacher is None:
-        arch_prec1, arch_prec5 = obtain_accuracy(logits.data, arch_targets.data, topk=(1, 5))
-        arch_top1.update  (arch_prec1.item(), arch_inputs.size(0))
-        arch_top5.update  (arch_prec5.item(), arch_inputs.size(0))
-    arch_losses.update(arch_loss.item(),  arch_inputs.size(0))
+        arch_loss.backward()
+        a_optimizer.step()
+        # record
+        if teacher is None:
+            arch_prec1, arch_prec5 = obtain_accuracy(logits.data, arch_targets.data, topk=(1, 5))
+            arch_top1.update  (arch_prec1.item(), arch_inputs.size(0))
+            arch_top5.update  (arch_prec5.item(), arch_inputs.size(0))
+        arch_losses.update(arch_loss.item(),  arch_inputs.size(0))
 
     # measure elapsed time
     batch_time.update(time.time() - end)
     end = time.time()
 
     if step % print_freq == 0 or step + 1 == len(xloader):
-      Sstr = '*SEARCH a* ' + time_string() + ' [{:}][{:03d}/{:03d}]'.format(epoch_str, step, len(xloader))
+      Sstr = '*SEARCH* ' + time_string() + ' [{:}][{:03d}/{:03d}]'.format(epoch_str, step, len(xloader))
       Tstr = 'Time {batch_time.val:.2f} ({batch_time.avg:.2f}) Data {data_time.val:.2f} ({data_time.avg:.2f})'.format(batch_time=batch_time, data_time=data_time)
       if teacher is None:
+          Wstr = 'Base [Loss {loss.val:.3f} ({loss.avg:.3f})  Prec@1 {top1.val:.2f} ({top1.avg:.2f}) Prec@5 {top5.val:.2f} ({top5.avg:.2f})]'.format(loss=base_losses, top1=base_top1, top5=base_top5)
           Astr = 'Arch [Loss {loss.val:.3f} ({loss.avg:.3f})  Prec@1 {top1.val:.2f} ({top1.avg:.2f}) Prec@5 {top5.val:.2f} ({top5.avg:.2f})]'.format(loss=arch_losses, top1=arch_top1, top5=arch_top5)
       else:
-          Astr = 'Arch [Loss {loss.val:.3f} ({loss.avg:.3f})]'.format(loss=arch_losses)
+          Wstr = 'Base [Loss {loss.val:.3f} ({loss.avg:.3f})]'.format(loss=base_losses)
+          Astr = ''
 
-      logger.log(Sstr + ' ' + Tstr + ' ' + Astr)
+      logger.log(Sstr + ' ' + Tstr + ' ' + Wstr + ' ' + Astr)
       #print (nn.functional.softmax(network.module.arch_parameters, dim=-1))
       #print (network.module.arch_parameters)
   if teacher is None:
-      return arch_losses.avg, arch_top1.avg, arch_top5.avg
+      return base_losses.avg, base_top1.avg, base_top5.avg, arch_losses.avg, arch_top1.avg, arch_top5.avg
   else:
-      return arch_losses.avg
-
+      return base_losses.avg
 
 def get_best_arch(xloader, network, n_samples):
   with torch.no_grad():
@@ -271,10 +228,6 @@ def main(xargs):
                               'affine'   : False, 'track_running_stats': bool(xargs.track_running_stats)}, None)
   logger.log('search space : {:}'.format(search_space))
   search_model = get_cell_based_tiny_net(model_config)
-  # max_grad_norm = 1.
-  # nn.utils.clip_grad_norm_(search_model.get_weights() + search_model.get_alphas(),
-  #                           max_grad_norm
-  #                           )
   w_optimizer, w_scheduler, criterion = get_optim_scheduler(search_model.get_weights(), config)
   a_optimizer = torch.optim.Adam(search_model.get_alphas(), lr=xargs.arch_learning_rate, betas=(0.5, 0.999), weight_decay=xargs.arch_weight_decay)
   logger.log('w-optimizer : {:}'.format(w_optimizer))
@@ -324,44 +277,27 @@ def main(xargs):
     logger.log("=> do not find the last-info file : {:}".format(last_info))
     start_epoch, genotypes = 0, {'hint': {}}
     search_losses, search_arch_losses, valid_losses = {'hint':{}}, {'hint':{}}, {'hint': {}}
-    # train_losses, train_acc1s, train_acc5s = {}, {}, {}
     valid_acc1s, valid_acc5s = {}, {}
 
-  # hint w training
-  start_time, transfer_w_time, epoch_time, total_hint_epoch = time.time(), AverageMeter(), AverageMeter(), matching_optim_config.epochs + matching_optim_config.warmup
+  # hint training
+  start_time, transfer_time, epoch_time, total_hint_epoch = time.time(), AverageMeter(), AverageMeter(), matching_optim_config.epochs + matching_optim_config.warmup
   for epoch in range(start_epoch, total_hint_epoch):
     h_scheduler.update(epoch, 0.0)
     need_time = 'Time Left: {:}'.format( convert_secs2time(epoch_time.val * (total_hint_epoch-epoch), True) )
     epoch_str = '{:03d}-{:03d}'.format(epoch, total_hint_epoch)
-    logger.log('\n[Transfer Search w the {:}-th epoch] {:}, LR={:}'.format(epoch_str, need_time, min(h_scheduler.get_lr())))
+    logger.log('\n[Transfer Search the {:}-th epoch] {:}, LR={:}'.format(epoch_str, need_time, min(h_scheduler.get_lr())))
 
     search_h_loss \
-                = search_w_train(search_loader, network, criterion, h_scheduler, h_optimizer, epoch_str, xargs.print_freq, logger, teacher, matching_layers)
-    transfer_w_time.update(time.time() - start_time)
-    logger.log('[{:}] Transfer search [base] : loss={:.2f}, time-cost={:.1f} s'.format(epoch_str, search_h_loss, transfer_w_time.sum))
-
-    search_losses['hint'][epoch] = search_h_loss
-
-    # measure elapsed time
-    epoch_time.update(time.time() - start_time)
-    start_time = time.time()
-
-  # hint a training
-  start_time, transfer_a_time, epoch_time, total_hint_epoch = time.time(), AverageMeter(), AverageMeter(), matching_optim_config.epochs + matching_optim_config.warmup
-  for epoch in range(start_epoch, total_hint_epoch):
-    need_time = 'Time Left: {:}'.format( convert_secs2time(epoch_time.val * (total_hint_epoch-epoch), True) )
-    epoch_str = '{:03d}-{:03d}'.format(epoch, total_hint_epoch)
-    logger.log('\n[Transfer Search a the {:}-th epoch] {:}, LR={:}'.format(epoch_str, need_time, get_lr(a_optimizer)))
-
-    search_a_loss \
-                = search_a_train(search_loader, network, criterion, a_optimizer, epoch_str, xargs.print_freq, logger, teacher, matching_layers)
-    transfer_a_time.update(time.time() - start_time)
-    logger.log('[{:}] Transfer search [arch] : loss={:.2f}, time-cost={:.1f} s'.format(epoch_str, search_a_loss, transfer_a_time.sum))
-
+                = search_func(search_loader, network, criterion, h_scheduler, h_optimizer, a_optimizer, epoch_str, xargs.print_freq, logger, teacher, matching_layers)
+    transfer_time.update(time.time() - start_time)
+    logger.log('[{:}] Transfer search [base] : loss={:.2f}, time-cost={:.1f} s'.format(epoch_str, search_h_loss, transfer_time.sum))
+    logger.log('[{:}] Transfer search [arch] : loss={:.2f}'.format(epoch_str, search_a_loss))
     # validation
     genotype, temp_loss = get_best_hint_arch(valid_loader, teacher, network, matching_layers, xargs.select_num)
     network.module.set_cal_mode('dynamic', genotype)
     valid_a_loss , _ , _  = valid_func(valid_loader, network, criterion)
+    # check the best accuracy
+    search_losses['hint'][epoch] = search_h_loss
     search_arch_losses['hint'][epoch] = search_a_loss
     valid_losses['hint'][epoch] = valid_a_loss
     genotypes['hint'][epoch] = genotype
@@ -374,74 +310,26 @@ def main(xargs):
     epoch_time.update(time.time() - start_time)
     start_time = time.time()
 
-  # search w training
-  start_time, search_w_time, epoch_time, total_epoch = time.time(), AverageMeter(), AverageMeter(), config.epochs + config.warmup
+  # start training
+  start_time, search_time, epoch_time, total_epoch = time.time(), AverageMeter(), AverageMeter(), config.epochs + config.warmup
   for epoch in range(start_epoch, total_epoch):
       w_scheduler.update(epoch, 0.0)
       need_time = 'Time Left: {:}'.format( convert_secs2time(epoch_time.val * (total_epoch-epoch), True) )
       epoch_str = '{:03d}-{:03d}'.format(epoch, total_epoch)
-      logger.log('\n[Search w the {:}-th epoch] {:}, LR={:}'.format(epoch_str, need_time, min(w_scheduler.get_lr())))
+      logger.log('\n[Search the {:}-th epoch] {:}, LR={:}'.format(epoch_str, need_time, min(w_scheduler.get_lr())))
 
-      search_w_loss, search_w_top1, search_w_top5 \
-            = search_w_train(search_loader, network, criterion, w_scheduler, w_optimizer, epoch_str, xargs.print_freq, logger)
-      search_w_time.update(time.time() - start_time)
-      logger.log('[{:}] search [base] : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%, time-cost={:.1f} s'.format(epoch_str, search_w_loss, search_w_top1, search_w_top5, search_w_time.sum))
-
-      search_losses[epoch] = search_w_loss
-
-      # save checkpoint
-      save_path = save_checkpoint({'epoch' : epoch + 1,
-      'args'  : deepcopy(xargs),
-      'search_model': search_model.state_dict(),
-      'w_optimizer' : w_optimizer.state_dict(),
-      'a_optimizer' : a_optimizer.state_dict(),
-      'w_scheduler' : w_scheduler.state_dict(),
-      'genotypes'   : genotypes,
-      "search_losses" : deepcopy(search_losses),
-      "search_arch_losses" : deepcopy(search_arch_losses),
-      "valid_losses" : deepcopy(valid_losses),
-      "valid_acc1s" : deepcopy(valid_acc1s),
-      "valid_acc5s" : deepcopy(valid_acc5s),
-      },
-      model_base_path, logger)
-
-      last_info = save_checkpoint({
-      'epoch': epoch + 1,
-      'args' : deepcopy(args),
-      'last_checkpoint': save_path,
-      }, logger.path('info'), logger)
-      # measure elapsed time
-      epoch_time.update(time.time() - start_time)
-      start_time = time.time()
-
-  # search a training
-  start_time, search_a_time, epoch_time, total_epoch = time.time(), AverageMeter(), AverageMeter(), config.epochs + config.warmup
-  for epoch in range(start_epoch, total_epoch):
-      w_scheduler.update(epoch, 0.0)
-      need_time = 'Time Left: {:}'.format( convert_secs2time(epoch_time.val * (total_epoch-epoch), True) )
-      epoch_str = '{:03d}-{:03d}'.format(epoch, total_epoch)
-      logger.log('\n[Search a the {:}-th epoch] {:}, LR={:}'.format(epoch_str, need_time, get_lr(a_optimizer)))
-
-      search_a_loss, search_a_top1, search_a_top5 \
-            = search_a_train(search_loader, network, criterion, a_optimizer, epoch_str, xargs.print_freq, logger)
-      search_a_time.update(time.time() - start_time)
+      search_w_loss, search_w_top1, search_w_top5, search_a_loss, search_a_top1, search_a_top5 \
+      = search_func(search_loader, network, criterion, w_scheduler, w_optimizer, a_optimizer, epoch_str, xargs.print_freq, logger)
+      search_time.update(time.time() - start_time)
+      logger.log('[{:}] search [base] : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%, time-cost={:.1f} s'.format(epoch_str, search_w_loss, search_w_top1, search_w_top5, search_time.sum))
       logger.log('[{:}] search [arch] : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%'.format(epoch_str, search_a_loss, search_a_top1, search_a_top5))
 
-      # validation
       genotype, temp_accuracy = get_best_arch(valid_loader, network, xargs.select_num)
       network.module.set_cal_mode('dynamic', genotype)
       valid_a_loss , valid_a_top1 , valid_a_top5  = valid_func(valid_loader, network, criterion)
       logger.log('[{:}] evaluate : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}% | {:}'.format(epoch_str, valid_a_loss, valid_a_top1, valid_a_top5, genotype))
-      #search_model.set_cal_mode('urs')
-      #valid_a_loss , valid_a_top1 , valid_a_top5  = valid_func(valid_loader, network, criterion)
-      #logger.log('[{:}] URS---evaluate : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%'.format(epoch_str, valid_a_loss, valid_a_top1, valid_a_top5))
-      #search_model.set_cal_mode('joint')
-      #valid_a_loss , valid_a_top1 , valid_a_top5  = valid_func(valid_loader, network, criterion)
-      #logger.log('[{:}] JOINT-evaluate : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%'.format(epoch_str, valid_a_loss, valid_a_top1, valid_a_top5))
-      #search_model.set_cal_mode('select')
-      #valid_a_loss , valid_a_top1 , valid_a_top5  = valid_func(valid_loader, network, criterion)
-      #logger.log('[{:}] Selec-evaluate : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%'.format(epoch_str, valid_a_loss, valid_a_top1, valid_a_top5))
       # check the best accuracy
+      search_losses[epoch] = search_w_loss
       search_arch_losses[epoch] = search_a_loss
 
       valid_losses[epoch] = valid_a_loss
@@ -477,20 +365,18 @@ def main(xargs):
       epoch_time.update(time.time() - start_time)
       start_time = time.time()
 
-
   # the final post procedure : count the time
   start_time = time.time()
   genotype, temp_accuracy = get_best_arch(valid_loader, network, xargs.select_num)
-  search_a_time.update(time.time() - start_time)
+  search_time.update(time.time() - start_time)
   network.module.set_cal_mode('dynamic', genotype)
   valid_a_loss , valid_a_top1 , valid_a_top5 = valid_func(valid_loader, network, criterion)
   logger.log('Last : the gentotype is : {:}, with the validation accuracy of {:.3f}%.'.format(genotype, valid_a_top1))
 
   logger.log('\n' + '-'*100)
   # check the performance from the architecture dataset
-  logger.log('Transfer : run {:} epochs, cost {:.1f} + {:.1f} s.'.format(total_hint_epoch, transfer_w_time.sum, transfer_a_time.sum))
-  logger.log('SETN : run {:} epochs, cost {:.1f} + {:.1f} s, last-geno is {:}.'.format(total_epoch, search_w_time.sum, search_a_time.sum, genotype))
-
+  logger.log('Transfer : run {:} epochs, cost {:.1f} s.'.format(total_hint_epoch, transfer_time.sum))
+  logger.log('SETN : run {:} epochs, cost {:.1f} s, last-geno is {:}.'.format(total_epoch, search_time.sum, genotype))
   if api is not None: logger.log('{:}'.format( api.query_by_arch(genotype) ))
   logger.close()
 
@@ -530,6 +416,4 @@ if __name__ == '__main__':
   if args.rand_seed is None or args.rand_seed < 0: args.rand_seed = random.randint(1, 100000)
   if args.exp_name != "":
       args.save_dir = args.save_dir + "/" + args.exp_name
-  results = main(args)
-  # if args.exp_name != "":
-  #     write_results(args, results)
+  main(args)

@@ -237,10 +237,6 @@ def main(xargs):
                               'affine'   : False, 'track_running_stats': bool(xargs.track_running_stats)}, None)
   logger.log('search space : {:}'.format(search_space))
   search_model = get_cell_based_tiny_net(model_config)
-  # max_grad_norm = 1.
-  # nn.utils.clip_grad_norm_(search_model.get_weights() + search_model.get_alphas(),
-  #                           max_grad_norm
-  #                           )
   w_optimizer, w_scheduler, criterion = get_optim_scheduler(search_model.get_weights(), config)
   a_optimizer = torch.optim.Adam(search_model.get_alphas(), lr=xargs.arch_learning_rate, betas=(0.5, 0.999), weight_decay=xargs.arch_weight_decay)
   logger.log('w-optimizer : {:}'.format(w_optimizer))
@@ -290,7 +286,6 @@ def main(xargs):
     logger.log("=> do not find the last-info file : {:}".format(last_info))
     start_epoch, genotypes = 0, {'hint': {}}
     search_losses, search_arch_losses, valid_losses = {'hint':{}}, {'hint':{}}, {'hint': {}}
-    # train_losses, train_acc1s, train_acc5s = {}, {}, {}
     valid_acc1s, valid_acc5s = {}, {}
 
   # hint training
@@ -310,38 +305,12 @@ def main(xargs):
     genotype, temp_loss = get_best_hint_arch(valid_loader, teacher, network, matching_layers, xargs.select_num)
     network.module.set_cal_mode('dynamic', genotype)
     valid_a_loss , _ , _  = valid_func(valid_loader, network, criterion)
-    # logger.log('[{:}] Transfer evaluate : loss={:.2f} | {:}'.format(epoch_str, valid_a_loss, genotype))
-    #search_model.set_cal_mode('urs')
-    #valid_a_loss , valid_a_top1 , valid_a_top5  = valid_func(valid_loader, network, criterion)
-    #logger.log('[{:}] URS---evaluate : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%'.format(epoch_str, valid_a_loss, valid_a_top1, valid_a_top5))
-    #search_model.set_cal_mode('joint')
-    #valid_a_loss , valid_a_top1 , valid_a_top5  = valid_func(valid_loader, network, criterion)
-    #logger.log('[{:}] JOINT-evaluate : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%'.format(epoch_str, valid_a_loss, valid_a_top1, valid_a_top5))
-    #search_model.set_cal_mode('select')
-    #valid_a_loss , valid_a_top1 , valid_a_top5  = valid_func(valid_loader, network, criterion)
-    #logger.log('[{:}] Selec-evaluate : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%'.format(epoch_str, valid_a_loss, valid_a_top1, valid_a_top5))
     # check the best accuracy
     search_losses['hint'][epoch] = search_h_loss
     search_arch_losses['hint'][epoch] = search_a_loss
     valid_losses['hint'][epoch] = valid_a_loss
     genotypes['hint'][epoch] = genotype
     logger.log('<<<--->>> The {:}-th epoch : {:}'.format(epoch_str, genotypes['hint'][epoch]))
-    # save checkpoint
-    # save_path = save_checkpoint({'epoch' : epoch + 1,
-    #             'args'  : deepcopy(xargs),
-    #             'search_model': search_model.state_dict(),
-    #             'w_optimizer' : w_optimizer.state_dict(),
-    #             'a_optimizer' : a_optimizer.state_dict(),
-    #             'w_scheduler' : w_scheduler.state_dict(),
-    #             'genotypes'   : genotypes,
-    #             'valid_accuracies' : valid_accuracies},
-    #             model_base_path, logger)
-    #
-    # last_info = save_checkpoint({
-    #       'epoch': epoch + 1,
-    #       'args' : deepcopy(args),
-    #       'last_checkpoint': save_path,
-    #       }, logger.path('info'), logger)
 
     with torch.no_grad():
       logger.log('arch-parameters :\n{:}'.format( nn.functional.softmax(search_model.arch_parameters, dim=-1).cpu() ))
@@ -368,15 +337,6 @@ def main(xargs):
       network.module.set_cal_mode('dynamic', genotype)
       valid_a_loss , valid_a_top1 , valid_a_top5  = valid_func(valid_loader, network, criterion)
       logger.log('[{:}] evaluate : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}% | {:}'.format(epoch_str, valid_a_loss, valid_a_top1, valid_a_top5, genotype))
-      #search_model.set_cal_mode('urs')
-      #valid_a_loss , valid_a_top1 , valid_a_top5  = valid_func(valid_loader, network, criterion)
-      #logger.log('[{:}] URS---evaluate : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%'.format(epoch_str, valid_a_loss, valid_a_top1, valid_a_top5))
-      #search_model.set_cal_mode('joint')
-      #valid_a_loss , valid_a_top1 , valid_a_top5  = valid_func(valid_loader, network, criterion)
-      #logger.log('[{:}] JOINT-evaluate : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%'.format(epoch_str, valid_a_loss, valid_a_top1, valid_a_top5))
-      #search_model.set_cal_mode('select')
-      #valid_a_loss , valid_a_top1 , valid_a_top5  = valid_func(valid_loader, network, criterion)
-      #logger.log('[{:}] Selec-evaluate : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%'.format(epoch_str, valid_a_loss, valid_a_top1, valid_a_top5))
       # check the best accuracy
       search_losses[epoch] = search_w_loss
       search_arch_losses[epoch] = search_a_loss
@@ -465,6 +425,4 @@ if __name__ == '__main__':
   if args.rand_seed is None or args.rand_seed < 0: args.rand_seed = random.randint(1, 100000)
   if args.exp_name != "":
       args.save_dir = args.save_dir + "/" + args.exp_name
-  results = main(args)
-  # if args.exp_name != "":
-  #     write_results(args, results)
+  main(args)
