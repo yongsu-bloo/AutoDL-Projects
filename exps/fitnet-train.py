@@ -49,11 +49,12 @@ def main(args):
                                   'affine'   : False, 'track_running_stats': bool(args.track_running_stats)}, None)
       logger.log('search space : {:}'.format(search_space))
       if args.sample_method != "uniform" and args.arch_str is None:
-          search_model = get_cell_based_tiny_net(student_config) # trained
+          # get trained model for architecture sampling
+          search_model = get_cell_based_tiny_net(student_config)
           student_checkpoint  = torch.load(args.student_checkpoint)
           search_model.load_state_dict( student_checkpoint['search_model'] )
 
-          student_model = get_cell_based_tiny_net(student_config)
+      student_model = get_cell_based_tiny_net(student_config)
   else:
       student_config = load_config(args.student_config)
       if "cifar" in args.dataset:
@@ -97,7 +98,7 @@ def main(args):
     start_epoch = last_info['epoch'] + 1
     checkpoint  = torch.load(last_info['last_checkpoint'])
     student_model.load_state_dict( checkpoint['student_model'] )
-    if args.student_config is None:
+    if args.student_config is None and args.search_space_name == "nas-bench-201":
         genotype = Structure.str2structure( checkpoint['genotype'] )
         nor_train_results = checkpoint['nor_train_results']
         (arch_train_result, arch_valid_result) = nor_train_results
@@ -119,7 +120,7 @@ def main(args):
     checkpoint  = torch.load( args.resume )
     start_epoch = checkpoint['epoch'] + 1
     student_model.load_state_dict( checkpoint['student_model'] )
-    if args.student_config is None:
+    if args.student_config is None and args.search_space_name == "nas-bench-201":
         genotype = Structure.str2structure( checkpoint['genotype'] )
         nor_train_results = checkpoint['nor_train_results']
         (arch_train_result, arch_valid_result) = nor_train_results
@@ -170,19 +171,21 @@ def main(args):
                 raise ValueError('invalid sample_method: {:}'.format(args.sample_method))
         else:
             genotype = Structure.str2structure(args.arch_str)
-        # Normal Training result from nas201
-        api = API('{:}/{:}'.format(os.environ['TORCH_HOME'], 'NAS-Bench-201-v1_0-e61699.pth'))
-        logger.log('{:} create API = {:} done'.format(time_string(), api))
-        # genotype=Structure.str2structure("|skip_connect~0|+|nor_conv_1x1~0|skip_connect~1|+|skip_connect~0|nor_conv_3x3~1|skip_connect~2|")
-        logger.log(genotype)
-        arch_index = api.query_index_by_arch(genotype)
-        archRes = api.query_meta_info_by_index(arch_index)
-        arch_train_result = archRes.get_metrics('cifar10-valid' if args.dataset == "cifar10" else args.dataset, 'train', None,  True)
-        arch_valid_result = archRes.get_metrics('cifar10-valid' if args.dataset == "cifar10" else args.dataset, 'x-valid', None,  True)
-        nor_train_results = (arch_train_result, arch_valid_result)
 
         network.module.set_cal_mode('dynamic', genotype)
-        logger.log("-"*100 + "\nNormal Training Result: \n Train : {:}\n Valid : {:}\n".format(*nor_train_results) + "-"*100)
+
+        if args.search_space_name == "nas-bench-201":
+            # Normal Training result from nas201
+            api = API('{:}/{:}'.format(os.environ['TORCH_HOME'], 'NAS-Bench-201-v1_0-e61699.pth'))
+            logger.log('{:} create API = {:} done'.format(time_string(), api))
+            # genotype=Structure.str2structure("|skip_connect~0|+|nor_conv_1x1~0|skip_connect~1|+|skip_connect~0|nor_conv_3x3~1|skip_connect~2|")
+            logger.log(genotype)
+            arch_index = api.query_index_by_arch(genotype)
+            archRes = api.query_meta_info_by_index(arch_index)
+            arch_train_result = archRes.get_metrics('cifar10-valid' if args.dataset == "cifar10" else args.dataset, 'train', None,  True)
+            arch_valid_result = archRes.get_metrics('cifar10-valid' if args.dataset == "cifar10" else args.dataset, 'x-valid', None,  True)
+            nor_train_results = (arch_train_result, arch_valid_result)
+            logger.log("-"*100 + "\nNormal Training Result: \n Train : {:}\n Valid : {:}\n".format(*nor_train_results) + "-"*100)
 
     start_epoch, max_bytes = 0, {}
     train_hint_losses = []
@@ -258,7 +261,7 @@ def main(args):
     train_time.update(time.time() - start_time)
     # log the results
     train_losses.append(train_loss); train_acc1s.append(train_acc1); train_acc5s.append(train_acc5)
-    logger.log('***{:s}*** TRAIN [{:}] loss = {:.6f}, accuracy-1 = {:.2f}, accuracy-5 = {:.2f} time-cost = {:.1f}'.format(time_string(), epoch_str, train_loss, train_acc1, train_acc5, start_time.sum))
+    logger.log('***{:s}*** TRAIN [{:}] loss = {:.6f}, accuracy-1 = {:.2f}, accuracy-5 = {:.2f} time-cost = {:.1f}'.format(time_string(), epoch_str, train_loss, train_acc1, train_acc5, train_time.sum))
 
     # evaluate the performance
     if (epoch % args.eval_frequency == 0) or (epoch + 1 == total_epoch):
@@ -293,7 +296,7 @@ def main(args):
           'PARAM'        : param,
           'model_config' : supernet_config._asdict(),
           'genotype'     : genotype.tostr() if args.student_config is None else "",
-          'nor_train_results'   : deepcopy(nor_train_results) if args.student_config is None else {},
+          'nor_train_results'   : deepcopy(nor_train_results) if args.student_config is None and args.search_space_name == "nas-bench-201" else {},
           'optim_config' : optim_config._asdict(),
           'matching_optim_config' : matching_optim_config._asdict(),
           'student_model'   : student_model.state_dict(),
