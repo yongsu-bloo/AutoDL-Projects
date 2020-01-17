@@ -20,8 +20,8 @@ class TinyNetworkGDAS(nn.Module):
     self.stem = nn.Sequential(
                     nn.Conv2d(3, C, kernel_size=3, padding=1, bias=False),
                     nn.BatchNorm2d(C))
-  
-    layer_channels   = [C    ] * N + [C*2 ] + [C*2  ] * N + [C*4 ] + [C*4  ] * N    
+
+    layer_channels   = [C    ] * N + [C*2 ] + [C*2  ] * N + [C*4 ] + [C*4  ] * N
     layer_reductions = [False] * N + [True] + [False] * N + [True] + [False] * N
 
     C_prev, num_edge, edge2index = C, None, None
@@ -85,7 +85,35 @@ class TinyNetworkGDAS(nn.Module):
       genotypes.append( tuple(xlist) )
     return Structure( genotypes )
 
-  def forward(self, inputs):
+  def forward_for_outs(self, inputs):
+    while True:
+      gumbels = -torch.empty_like(self.arch_parameters).exponential_().log()
+      logits  = (self.arch_parameters.log_softmax(dim=1) + gumbels) / self.tau
+      probs   = nn.functional.softmax(logits, dim=1)
+      index   = probs.max(-1, keepdim=True)[1]
+      one_h   = torch.zeros_like(logits).scatter_(-1, index, 1.0)
+      hardwts = one_h - probs.detach() + probs
+      if (torch.isinf(gumbels).any()) or (torch.isinf(probs).any()) or (torch.isnan(probs).any()):
+        continue
+      else: break
+    all_outs = []
+    feature = self.stem(inputs)
+    for i, cell in enumerate(self.cells):
+      if isinstance(cell, SearchCell):
+        feature = cell.forward_gdas(feature, hardwts, index)
+      else:
+        feature = cell(feature)
+      all_outs.append(feature)
+    out = self.lastact(feature)
+    # all_outs[-1] = out
+    out = self.global_pooling( out )
+    out = out.view(out.size(0), -1)
+    logits = self.classifier(out)
+
+    return out, logits, all_outs
+
+  def forward(self, inputs, out_all=False):
+    if out_all: return self.forward_for_outs(inputs)
     while True:
       gumbels = -torch.empty_like(self.arch_parameters).exponential_().log()
       logits  = (self.arch_parameters.log_softmax(dim=1) + gumbels) / self.tau

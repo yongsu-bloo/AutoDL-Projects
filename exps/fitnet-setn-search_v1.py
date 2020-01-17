@@ -47,6 +47,7 @@ def search_func(xloader, network, criterion, scheduler, w_optimizer, a_optimizer
     #network.module.set_cal_mode( 'urs' )
     network.zero_grad()
     if teacher is not None:
+        matching_layers.train()
         matching_layers.zero_grad()
 
     _, logits, st_outs = network(base_inputs, out_all=True)
@@ -417,7 +418,7 @@ if __name__ == '__main__':
   # log
   parser.add_argument('--workers',            type=int,   default=4,    help='number of data loading workers (default: 4)')
   parser.add_argument('--save_dir',           type=str,   default="./output/transfer-search",     help='Folder to save checkpoints and log.')
-  parser.add_argument('--arch_nas_dataset',   type=str,   default=os.environ['TORCH_HOME'] + "/NAS-Bench-102-v1_0-e61699.pth", help='The path to load the architecture dataset (tiny-nas-benchmark).')
+  parser.add_argument('--arch_nas_dataset',   type=str,   default=os.environ['TORCH_HOME'] + "/NAS-Bench-201-v1_0-e61699.pth", help='The path to load the architecture dataset (tiny-nas-benchmark).')
   parser.add_argument('--print_freq',         type=int,   default=100, help='print frequency (default: 100)')
   parser.add_argument('--rand_seed',          type=int,   default=-1, help='manual seed')
 

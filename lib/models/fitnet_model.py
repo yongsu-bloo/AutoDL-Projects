@@ -48,21 +48,11 @@ class FeatureMatching(nn.ModuleList):
         if beta is None:
             beta = self.beta
         matching_loss = 0.0
-        # matching_loss = []
-        # print("*"*150)
         for i, (src_idx, tgt_idx) in enumerate(self.pairs):
             sw = source_features[src_idx].size(3)
             tw = target_features[tgt_idx].size(3)
             if sw == tw:
                 diff = source_features[src_idx] - self[i](target_features[tgt_idx])
-                # with torch.no_grad():
-                #     print("feature difference: {}".format(diff.pow(2).mean().item()))
-                #     if diff.pow(2).mean().item() > 1e+4:
-                #         print("Huge loss detected")
-                #         print(diff.shape)
-                #         print("Teacher: {:}".format(source_features[src_idx].mean().item()))
-                #         print("Student: {:}".format(target_features[tgt_idx].mean().item()))
-                #         print("Student + layer: {:}".format(self[i](target_features[tgt_idx]).mean().item()))
             else:
                 diff = F.interpolate(
                     source_features[src_idx],
@@ -71,19 +61,4 @@ class FeatureMatching(nn.ModuleList):
                 ) - self[i](target_features[tgt_idx])
             diff = diff.pow(2).mean(3).mean(2).mean(1).mul(beta)
             matching_loss += diff
-            # matching_loss.append(diff.mean())
-        # with torch.no_grad():
-        #     print("\nTotal matching loss: {:}".format(matching_loss.sum().item()))
-        #     if matching_loss.mean().item() > 1e+5:
-        #         print("Teacher features")
-        #         for i, feature in enumerate(source_features):
-        #             print(i)
-        #             print(feature[0].shape)
-        #             print(feature[0].detach().cpu().numpy())
-        #
-        #         print("Student features")
-        #         for i, feature in enumerate(target_features):
-        #             print(i)
-        #             print(feature[0].shape)
-        #             print(feature[0].detach().cpu().numpy())
         return matching_loss
