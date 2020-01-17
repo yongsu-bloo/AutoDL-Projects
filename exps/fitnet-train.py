@@ -294,7 +294,7 @@ def main(args):
           'max_bytes'    : deepcopy(max_bytes),
           'FLOP'         : flop,
           'PARAM'        : param,
-          'model_config' : student_config._asdict(),
+          'model_config' : supernet_config._asdict(),
           'genotype'     : genotype.tostr() if args.student_config is None else "",
           'nor_train_results'   : deepcopy(nor_train_results) if args.student_config is None and args.search_space_name == "nas-bench-201" else {},
           'optim_config' : optim_config._asdict(),
@@ -325,10 +325,8 @@ def main(args):
   logger.log('Finish training/validation in {:} and save final checkpoint into {:}'.format(convert_secs2time(epoch_time.sum, True), logger.path('info')))
   logger.log('-'*200 + '\n')
   logger.close()
-  if args.student_config is None and args.search_space_name == "nas-bench-201":
-      return arch_train_result['accuracy'], arch_valid_result['accuracy'], train_losses[-1], train_acc1s[-1], train_acc5s[-1], valid_losses[-1], valid_acc1s['best'], valid_acc5s[-1]
-  else:
-      return train_losses[-1], train_acc1s[-1], train_acc5s[-1], valid_losses[-1], valid_acc1s['best'], valid_acc5s[-1]
+  return arch_train_result['accuracy'], arch_valid_result['accuracy'], train_losses[-1], train_acc1s[-1], train_acc5s[-1], valid_losses[-1], valid_acc1s['best'], valid_acc5s[-1]
+
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser("fitnet-main")
@@ -386,7 +384,4 @@ if __name__ == '__main__':
 
   results = main(args)
   if args.exp_name != "":
-      try:
-          write_results(args, results)
-      except:
-          print(results)
+    write_results(args, results)
