@@ -199,43 +199,44 @@ def main(args):
 
 
   """Main Training and Evaluation Loop"""
-  # Hint Training First
-  start_time, hint_time, epoch_time, total_epoch = time.time(), AverageMeter(), AverageMeter(), matching_optim_config.epochs + matching_optim_config.warmup
-  if args.exp_name == "tmp": total_epoch = 2
-  fitnet_train_func, fitnet_valid_func = get_procedures("fitnet")
-  for epoch in range(start_epoch, total_epoch):
-    h_scheduler.update(epoch, 0.0)
-    need_time = 'Time Left: {:}'.format( convert_secs2time(epoch_time.avg * (total_epoch-epoch), True) )
-    epoch_str = 'epoch={:03d}/{:03d}'.format(epoch, total_epoch)
-    LRs       = h_scheduler.get_lr()
-    find_best = False
+  if not args.resume and not last_info.exists() or args.overwrite:
+      # Hint Training First
+      start_time, hint_time, epoch_time, total_epoch = time.time(), AverageMeter(), AverageMeter(), matching_optim_config.epochs + matching_optim_config.warmup
+      if args.exp_name == "tmp": total_epoch = 2
+      fitnet_train_func, fitnet_valid_func = get_procedures("fitnet")
+      for epoch in range(start_epoch, total_epoch):
+        h_scheduler.update(epoch, 0.0)
+        need_time = 'Time Left: {:}'.format( convert_secs2time(epoch_time.avg * (total_epoch-epoch), True) )
+        epoch_str = 'epoch={:03d}/{:03d}'.format(epoch, total_epoch)
+        LRs       = h_scheduler.get_lr()
+        find_best = False
 
-    logger.log('\n***{:s}*** start {:s} {:s}, LR=[{:.6f} ~ {:.6f}], h_scheduler={:}'.format(time_string(), epoch_str, need_time, min(LRs), max(LRs), h_scheduler))
+        logger.log('\n***{:s}*** start {:s} {:s}, LR=[{:.6f} ~ {:.6f}], h_scheduler={:}'.format(time_string(), epoch_str, need_time, min(LRs), max(LRs), h_scheduler))
 
-    # train for one epoch
-    train_loss, _, _ = fitnet_train_func(train_loader, teacher, network, matching_layers, criterion, h_scheduler, h_optimizer, matching_optim_config, epoch_str, args.print_freq, logger)
-    hint_time.update(time.time() - start_time)
-    train_hint_losses.append(train_loss)
-    # log the results
-    logger.log('***{:s}*** HINT TRAIN [{:}] loss = {:.6f} time-cost = {:.1f}'.format(time_string(), epoch_str, train_loss, hint_time.sum))
-    # measure elapsed time
-    epoch_time.update(time.time() - start_time)
+        # train for one epoch
+        train_loss, _, _ = fitnet_train_func(train_loader, teacher, network, matching_layers, criterion, h_scheduler, h_optimizer, matching_optim_config, epoch_str, args.print_freq, logger)
+        hint_time.update(time.time() - start_time)
+        train_hint_losses.append(train_loss)
+        # log the results
+        logger.log('***{:s}*** HINT TRAIN [{:}] loss = {:.6f} time-cost = {:.1f}'.format(time_string(), epoch_str, train_loss, hint_time.sum))
+        # measure elapsed time
+        epoch_time.update(time.time() - start_time)
 
-    # evaluate the performance
-    if (epoch % args.eval_frequency == 0) or (epoch + 1 == total_epoch):
-      logger.log('-'*150)
-      valid_loss, _, _ = fitnet_valid_func(valid_loader, teacher, network, matching_layers, criterion, optim_config, epoch_str, args.print_freq_eval, logger)
-      valid_hint_losses[epoch] = valid_loss
-      logger.log('***{:s}*** VALID [{:}] loss = {:.6f} | Best-Loss={:.6f}'.format(time_string(), epoch_str, valid_loss, valid_hint_losses['best']))
-      if valid_loss <= valid_hint_losses['best']:
-        valid_hint_losses['best'] = valid_loss
-        find_best                = True
-        logger.log('Currently, the best validation hint loss found at {:03d}-epoch :: loss={:.6f}'.format(epoch, valid_loss))
-      num_bytes = torch.cuda.max_memory_cached( next(network.parameters()).device ) * 1.0
-      logger.log('[GPU-Memory-Usage on {:} is {:} bytes, {:.2f} KB, {:.2f} MB, {:.2f} GB.]'.format(next(network.parameters()).device, int(num_bytes), num_bytes / 1e3, num_bytes / 1e6, num_bytes / 1e9))
-      max_bytes[epoch] = num_bytes
-    if epoch % 10 == 0: torch.cuda.empty_cache()
-    start_time = time.time()
+        # evaluate the performance
+        if (epoch % args.eval_frequency == 0) or (epoch + 1 == total_epoch):
+          logger.log('-'*150)
+          valid_loss, _, _ = fitnet_valid_func(valid_loader, teacher, network, matching_layers, criterion, optim_config, epoch_str, args.print_freq_eval, logger)
+          valid_hint_losses[epoch] = valid_loss
+          logger.log('***{:s}*** VALID [{:}] loss = {:.6f} | Best-Loss={:.6f}'.format(time_string(), epoch_str, valid_loss, valid_hint_losses['best']))
+          if valid_loss <= valid_hint_losses['best']:
+            valid_hint_losses['best'] = valid_loss
+            find_best                = True
+            logger.log('Currently, the best validation hint loss found at {:03d}-epoch :: loss={:.6f}'.format(epoch, valid_loss))
+          num_bytes = torch.cuda.max_memory_cached( next(network.parameters()).device ) * 1.0
+          logger.log('[GPU-Memory-Usage on {:} is {:} bytes, {:.2f} KB, {:.2f} MB, {:.2f} GB.]'.format(next(network.parameters()).device, int(num_bytes), num_bytes / 1e3, num_bytes / 1e6, num_bytes / 1e9))
+          max_bytes[epoch] = num_bytes
+        if epoch % 10 == 0: torch.cuda.empty_cache()
+        start_time = time.time()
 
   # Guided layer training
   start_time, train_time, epoch_time, total_epoch = time.time(), AverageMeter(), AverageMeter(), optim_config.epochs + optim_config.warmup
