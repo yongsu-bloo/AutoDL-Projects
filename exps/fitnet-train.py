@@ -101,7 +101,7 @@ def main(args):
     if args.student_config is None and args.search_space_name == "nas-bench-201":
         genotype = Structure.str2structure( checkpoint['genotype'] )
         nor_train_results = checkpoint['nor_train_results']
-        (arch_train_result, arch_valid_result) = nor_train_results
+        (arch_train_result, arch_test_result) = nor_train_results
     matching_layers.load_state_dict( checkpoint['matching_layers'] )
     w_scheduler.load_state_dict ( checkpoint['w_scheduler'] )
     w_optimizer.load_state_dict ( checkpoint['w_optimizer'] )
@@ -123,7 +123,7 @@ def main(args):
     if args.student_config is None and args.search_space_name == "nas-bench-201":
         genotype = Structure.str2structure( checkpoint['genotype'] )
         nor_train_results = checkpoint['nor_train_results']
-        (arch_train_result, arch_valid_result) = nor_train_results
+        (arch_train_result, arch_test_result) = nor_train_results
     matching_layers.load_state_dict( checkpoint['matching_layers'] )
     w_scheduler.load_state_dict ( checkpoint['w_scheduler'] )
     w_optimizer.load_state_dict ( checkpoint['w_optimizer'] )
@@ -144,7 +144,7 @@ def main(args):
     if args.student_config is None:
         genotype = Structure.str2structure( checkpoint['genotype'] )
         nor_train_results = checkpoint['nor_train_results']
-        (arch_train_result, arch_valid_result) = nor_train_results
+        (arch_train_result, arch_test_result) = nor_train_results
     matching_layers.load_state_dict( checkpoint['matching_layers'] )
     start_epoch = 0
     train_hint_losses = []
@@ -182,9 +182,9 @@ def main(args):
             logger.log(genotype)
             arch_index = api.query_index_by_arch(genotype)
             archRes = api.query_meta_info_by_index(arch_index)
-            arch_train_result = archRes.get_metrics('cifar10-valid' if args.dataset == "cifar10" else args.dataset, 'train', None,  True)
-            arch_valid_result = archRes.get_metrics('cifar10-valid' if args.dataset == "cifar10" else args.dataset, 'x-valid', None,  True)
-            nor_train_results = (arch_train_result, arch_valid_result)
+            arch_train_result = archRes.get_metrics(args.dataset, 'train', None,  True)
+            arch_test_result = archRes.get_metrics(args.dataset, 'ori-test', None,  True)
+            nor_train_results = (arch_train_result, arch_test_result)
             logger.log("-"*100 + "\nNormal Training Result: \n Train : {:}\n Valid : {:}\n".format(*nor_train_results) + "-"*100)
 
     start_epoch, max_bytes = 0, {}
@@ -327,7 +327,7 @@ def main(args):
   logger.log('-'*200 + '\n')
   logger.close()
   if args.student_config is None and args.search_space_name == "nas-bench-201":
-      return arch_train_result['accuracy'], arch_valid_result['accuracy'], train_losses[-1], train_acc1s[-1], train_acc5s[-1], valid_losses[-1], valid_acc1s['best'], valid_acc5s[-1]
+      return arch_train_result['accuracy'], arch_test_result['accuracy'], train_losses[-1], train_acc1s[-1], train_acc5s[-1], valid_losses[-1], valid_acc1s['best'], valid_acc5s[-1]
   else:
       return train_losses[-1], train_acc1s[-1], train_acc5s[-1], valid_losses[-1], valid_acc1s['best'], valid_acc5s[-1]
 
