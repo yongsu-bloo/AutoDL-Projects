@@ -7,12 +7,12 @@ from copy import deepcopy
 from ..cell_operations import ResNetBasicblock
 from .search_cells     import NAS201SearchCell as SearchCell
 from .genotypes        import Structure
-
+from ..cell_infers.cells     import InferCell
 
 class TinyNetworkGDAS(nn.Module):
 
   #def __init__(self, C, N, max_nodes, num_classes, search_space, affine=False, track_running_stats=True):
-  def __init__(self, C, N, max_nodes, num_classes, search_space, affine, track_running_stats):
+  def __init__(self, C, N, max_nodes, num_classes, search_space, affine, track_running_stats, fixed_genotype=None, search_position=None):
     super(TinyNetworkGDAS, self).__init__()
     self._C        = C
     self._layerN   = N
@@ -23,16 +23,24 @@ class TinyNetworkGDAS(nn.Module):
 
     layer_channels   = [C    ] * N + [C*2 ] + [C*2  ] * N + [C*4 ] + [C*4  ] * N
     layer_reductions = [False] * N + [True] + [False] * N + [True] + [False] * N
-
+    if search_position is not None:
+        is_search = [False, False, False]
+        is_search[search_position] = True
+        layer_searches = [is_search[0]] * N + [False] + [is_search[1]] * N + [False] + [is_search[2]] * N
+    else:
+        layer_searches = [ not tf for tf in layer_reductions ]
     C_prev, num_edge, edge2index = C, None, None
     self.cells = nn.ModuleList()
-    for index, (C_curr, reduction) in enumerate(zip(layer_channels, layer_reductions)):
+    for index, (C_curr, reduction, is_search) in enumerate(zip(layer_channels, layer_reductions, layer_searches)):
       if reduction:
         cell = ResNetBasicblock(C_prev, C_curr, 2)
-      else:
+      elif is_search:
         cell = SearchCell(C_prev, C_curr, 1, max_nodes, search_space, affine, track_running_stats)
         if num_edge is None: num_edge, edge2index = cell.num_edges, cell.edge2index
         else: assert num_edge == cell.num_edges and edge2index == cell.edge2index, 'invalid {:} vs. {:}.'.format(num_edge, cell.num_edges)
+      else:
+        cell = InferCell(fixed_genotype, C_prev, C_curr, 1)
+
       self.cells.append( cell )
       C_prev = cell.out_dim
     self.op_names   = deepcopy( search_space )

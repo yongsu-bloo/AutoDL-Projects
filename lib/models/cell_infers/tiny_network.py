@@ -18,8 +18,8 @@ class TinyNetwork(nn.Module):
     self.stem = nn.Sequential(
                     nn.Conv2d(3, C, kernel_size=3, padding=1, bias=False),
                     nn.BatchNorm2d(C))
-  
-    layer_channels   = [C    ] * N + [C*2 ] + [C*2  ] * N + [C*4 ] + [C*4  ] * N    
+
+    layer_channels   = [C    ] * N + [C*2 ] + [C*2  ] * N + [C*4 ] + [C*4  ] * N
     layer_reductions = [False] * N + [True] + [False] * N + [True] + [False] * N
 
     C_prev = C
@@ -46,7 +46,22 @@ class TinyNetwork(nn.Module):
   def extra_repr(self):
     return ('{name}(C={_C}, N={_layerN}, L={_Layer})'.format(name=self.__class__.__name__, **self.__dict__))
 
-  def forward(self, inputs):
+  def forward_for_outs(self, inputs):
+    all_outs = []
+    feature = self.stem(inputs)
+    for i, cell in enumerate(self.cells):
+      feature = cell(feature)
+      all_outs.append(feature)
+    out = self.lastact(feature)
+    out = self.global_pooling( out )
+    out = out.view(out.size(0), -1)
+    logits = self.classifier(out)
+
+    return out, logits, all_outs
+
+
+  def forward(self, inputs, out_all=False):
+    if out_all: return self.forward_for_outs(inputs)
     feature = self.stem(inputs)
     for i, cell in enumerate(self.cells):
       feature = cell(feature)

@@ -294,10 +294,6 @@ if __name__ == '__main__':
   parser.add_argument('--sample_method',    type=str,     default='uniform', choices=['uniform', 'infer', 'best'],    help='The architecture sampling method: uniform, infer, best')
   parser.add_argument('--select_num',         type=int,   default=100, help='The number of selected architectures to evaluate.')
   parser.add_argument('--arch_str',         type=str,       default=None, help="specific architecture to be transfer trained")
-  # architecture leraning rate
-  # parser.add_argument('--arch_learning_rate', type=float, default=3e-4, help='learning rate for arch encoding')
-  # parser.add_argument('--arch_weight_decay',  type=float, default=1e-3, help='weight decay for arch encoding')
-  # parser.add_argument('--arch_nas_dataset',   type=str,   help='The path to load the architecture dataset (tiny-nas-benchmark).')
   # Training Options
   parser.add_argument('--procedure'   ,     type=str,        default='basic',       help='The procedure basic prefix.')
   parser.add_argument('--KD_alpha'    ,     type=float,      default=0.9,           help='The alpha parameter in knowledge distillation.')
@@ -311,7 +307,7 @@ if __name__ == '__main__':
   parser.add_argument('--student_config',     type=str,    help='The path to the student model configuration')
   parser.add_argument('--optim_config',     type=str,    default="./configs/opts/CIFAR-fitnet-nas102-hint.config",      help='The path to the optimizer configuration')
   parser.add_argument('--student_checkpoint',    type=str,    default="./output/search-cell-nas-bench-102/SETN-cifar10/checkpoint/seed-36878-basic.pth",          help='The student checkpoint in knowledge distillation.')
-  parser.add_argument('--teacher_checkpoint',    type=str,    default="./.latent-data/basemodels/cifar10/ResNet56.pth",          help='The teacher checkpoint in knowledge distillation.')
+  parser.add_argument('--teacher_checkpoint',    type=str,    default="./.latent-data/basemodels/cifar10/ResNet110.pth",          help='The teacher checkpoint in knowledge distillation.')
   # Acceleration
   parser.add_argument('--workers',          type=int,   default=4,      help='number of data loading workers (default: 8)')
   parser.add_argument('--batch_size',       type=int,   default=256,    help='batch size (default: 256)')

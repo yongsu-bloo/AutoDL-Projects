@@ -22,10 +22,16 @@ def get_cell_based_tiny_net(config):
   group_names = ['DARTS-V1', 'DARTS-V2', 'GDAS', 'SETN', 'ENAS', 'RANDOM']
   if super_type == 'basic' and config.name in group_names:
     from .cell_searchs import nas201_super_nets as nas_super_nets
+    inputs = [config.C, config.N, config.max_nodes, config.num_classes, config.space, config.affine, config.track_running_stats]
+    if hasattr(config, "fixed_genotype") and hasattr(config, "search_position"):
+        kargs = {"fixed_genotype": config.fixed_genotype, "search_position": config.search_position}
+    else:
+        kargs = {}
     try:
-      return nas_super_nets[config.name](config.C, config.N, config.max_nodes, config.num_classes, config.space, config.affine, config.track_running_stats)
+      return nas_super_nets[config.name](*inputs, **kargs)
     except:
-      return nas_super_nets[config.name](config.C, config.N, config.max_nodes, config.num_classes, config.space)
+      inputs = [config.C, config.N, config.max_nodes, config.num_classes, config.space, config.affine]
+      return nas_super_nets[config.name](*inputs, **kargs)
   elif super_type == 'nasnet-super':
     from .cell_searchs import nasnet_super_nets as nas_super_nets
     return nas_super_nets[config.name](config.C, config.N, config.steps, config.multiplier, \

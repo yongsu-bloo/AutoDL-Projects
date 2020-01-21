@@ -37,7 +37,7 @@ class WideBasicblock(nn.Module):
 
     if self.downsample is not None:
       x = self.downsample(x)
-    
+
     return x + basicblock
 
 
@@ -82,7 +82,23 @@ class CifarWideResNet(nn.Module):
 
     return nn.Sequential(*layers)
 
-  def forward(self, x):
+  def forward_for_outs(self, x):
+    all_outs = []
+    x = self.conv_3x3(x)
+    x = self.stage_1(x)
+    all_outs.append(x)
+    x = self.stage_2(x)
+    all_outs.append(x)
+    x = self.stage_3(x)
+    all_outs.append(x)
+    x = self.lastact(x)
+    x = self.avgpool(x)
+    features = x.view(x.size(0), -1)
+    outs     = self.classifier(features)
+    return features, outs, all_outs
+
+  def forward(self, x, out_all=False):
+    if out_all: return self.forward_for_outs(x)
     x = self.conv_3x3(x)
     x = self.stage_1(x)
     x = self.stage_2(x)

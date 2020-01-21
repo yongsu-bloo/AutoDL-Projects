@@ -1,30 +1,38 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from .CifarResNet import CifarResNet
+from .CifarDenseNet import DenseNet
+from .CifarWideResNet import CifarWideResNet
 
 class FeatureMatching(nn.ModuleList):
     def __init__(self, source_model, target_model):
         super(FeatureMatching, self).__init__()
-        if hasattr(source_model.module, 'xchannels'):
-            src_list = source_model.module.xchannels
-        elif hasattr(source_model.module, 'channels'):
-            # CifarResNet
+        if isinstance(source_model.module, CifarResNet):
             src_list = source_model.module.channels
+        elif isinstance(source_model.module, DenseNet):
+            raise NotImplementedError
         elif hasattr(source_model.module, '_C') and hasattr(source_model.module, '_layerN'):
+            # TinyNetwork
             C = source_model.module._C
             N = source_model.module._layerN
             src_list   = [C    ] * N + [C*2 ] + [C*2  ] * N + [C*4 ] + [C*4  ] * N
+        elif isinstance(source_model.module, CifarWideResNet):
+            src_list = [160, 320, 640]
         else:
             raise ValueError('invalid teacher : {:}'.format(source_model))
-        if hasattr(target_model.module, 'xchannels'):
-            tgt_list = target_model.module.xchannels
-        elif hasattr(target_model.module, 'channels'):
+
+        if isinstance(target_model.module, CifarResNet):
             tgt_list = target_model.module.channels
+        elif isinstance(target_model.module, DenseNet):
+            raise NotImplementedError
         elif hasattr(target_model.module, '_C') and hasattr(target_model.module, '_layerN'):
-            # TinyNetworkSETN
+            # TinyNetwork
             C = target_model.module._C
             N = target_model.module._layerN
             tgt_list   = [C    ] * N + [C*2 ] + [C*2  ] * N + [C*4 ] + [C*4  ] * N
+        elif isinstance(target_model.module, CifarWideResNet):
+            tgt_list = [160, 320, 640]
         else:
             raise ValueError('invalid student : {:}'.format(target_model))
         src_reductions = [ len(src_list) - src_list[::-1].index(src_list[0] * i) - 1 for i in [1,2,4] ]
