@@ -157,7 +157,7 @@ def main(xargs):
   logger.log('w-scheduler : {:}'.format(w_scheduler))
   logger.log('criterion   : {:}'.format(criterion))
   flop, param  = get_model_infos(search_model, xshape)
-  # logger.log('{:}'.format(search_model))
+  logger.log('{:}'.format(search_model))
   logger.log('FLOP = {:.2f} M, Params = {:.2f} MB'.format(flop, param))
   logger.log('search-space : {:}'.format(search_space))
   if xargs.search_space_name != "nas-bench-201" or xargs.num_cells != 5:
@@ -273,7 +273,7 @@ if __name__ == '__main__':
   parser.add_argument('--exp_name',           type=str,  default="",   help='Experiment name')
   parser.add_argument('--overwrite',          type=bool, default=False,  help='Overwrite the existing results')
   # Transfer layer
-  parser.add_argument('--teacher_checkpoint', type=str,   default="./.latent-data/basemodels/cifar10/ResNet56.pth",          help='The teacher checkpoint in knowledge distillation.')
+  parser.add_argument('--teacher_checkpoint', type=str,   default="./.latent-data/basemodels/cifar10/WRN-28-10.pth",          help='The teacher checkpoint in knowledge distillation.')
   parser.add_argument('--beta',               type=float, default=0.5, help='matching loss scale')
   parser.add_argument("--fixed_genotype",     type=str,   help="Part cell search architecture")
   parser.add_argument("--search_position",    type=int,   help="Part cell search stage: [0,1,2]")

@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 np.random.seed(777)
 
-def main(config_path):
+def main(config_path, base_command):
     # parse json file
     with open(config_path) as json_file:
         settings = json.load(json_file)
@@ -24,7 +24,7 @@ def main(config_path):
     trial_num = settings['trial_num']
 
     # base command
-    base_command = ['OMP_NUM_THREADS=4 python exps/fitnet-main.py']
+    base_command = [base_command]
 
     # gpu ids
     gpu_ids = settings['gpu_ids']
@@ -151,6 +151,7 @@ def main(config_path):
 
 if __name__=='__main__':
     config_path = sys.argv[1]
+    base_command = sys.argv[2] if len(sys.argv) >= 3 else 'OMP_NUM_THREADS=4 python exps/fitnet-train.py'
     start_time = time.time()
-    main(config_path)
+    main(config_path, base_command)
     print("Total Time to Experiment: " + str(timedelta(seconds=time.time()-start_time)))
