@@ -35,8 +35,14 @@ class FeatureMatching(nn.ModuleList):
             tgt_list = [160, 320, 640]
         else:
             raise ValueError('invalid student : {:}'.format(target_model))
-        src_reductions = [ len(src_list) - src_list[::-1].index(src_list[0] * i) - 1 for i in [1,2,4] ]
-        tgt_reductions = [ len(tgt_list) - tgt_list[::-1].index(tgt_list[0] * i) - 1 for i in [1,2,4] ]
+        try:
+            src_reductions = [ len(src_list) - src_list[::-1].index(src_list[0] * i) - 1 for i in [1,2,4] ]
+        except:
+            src_reductions = [ len(src_list) - src_list[::-1].index(src_list[1] * i) - 1 for i in [1,2,4] ]
+        try:
+            tgt_reductions = [ len(tgt_list) - tgt_list[::-1].index(tgt_list[0] * i) - 1 for i in [1,2,4] ]
+        except:
+            tgt_reductions = [ len(tgt_list) - tgt_list[::-1].index(tgt_list[1] * i) - 1 for i in [1,2,4] ]
         pairs = [ (src_f, tgt_f) for (src_f, tgt_f) in zip(src_reductions, tgt_reductions) ]
 
         self.pairs = pairs

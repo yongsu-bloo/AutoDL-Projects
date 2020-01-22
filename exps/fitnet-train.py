@@ -60,6 +60,7 @@ def main(args):
   # Teacher
   teacher_base = load_net_from_checkpoint(args.teacher_checkpoint)
   teacher      = torch.nn.DataParallel(teacher_base).cuda()
+  print(teacher_base.channels)
   # Matching layer
   matching_layers = FeatureMatching(teacher, network)
   matching_layers.beta = args.beta
@@ -291,9 +292,9 @@ if __name__ == '__main__':
   parser.add_argument('--student_config',        type=str,    help='The path to the student model configuration')
   parser.add_argument('--optim_config',          type=str,    default="./configs/opts/CIFAR-fitnet-nas102-hint.config",      help='The path to the optimizer configuration')
   parser.add_argument('--student_checkpoint',    type=str,    help='The student checkpoint.')
-  parser.add_argument('--teacher_checkpoint',    type=str,    default="./.latent-data/basemodels/cifar10/WRN-28-10.pth",          help='The teacher checkpoint in knowledge distillation.')
+  parser.add_argument('--teacher_checkpoint',    type=str,    default="./.latent-data/basemodels/cifar10/ResNet164.pth",          help='The teacher checkpoint in knowledge distillation.')
   # Acceleration
-  parser.add_argument('--workers',          type=int,   default=8,      help='number of data loading workers (default: 8)')
+  parser.add_argument('--workers',          type=int,   default=4,      help='number of data loading workers')
   parser.add_argument('--batch_size',       type=int,   default=256,    help='batch size (default: 256)')
   # Random Seed
   parser.add_argument('--rand_seed',        type=int,   default=-1,     help='manual seed')
@@ -303,7 +304,7 @@ if __name__ == '__main__':
       if args.arch_str is None:
           args.save_dir += str(args.version) + "/" + args.exp_name + "/" + args.sample_method + "/" + args.procedure
       else:
-          args.save_dir += str(args.version) + "/" + args.exp_name +  "/" + args.procedure
+          args.save_dir += str(args.version) + "/" + args.exp_name +  "/" + args.procedure + "/Beta{}".format(args.beta)
 
   results = main(args)
   if args.exp_name != "":
