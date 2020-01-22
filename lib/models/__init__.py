@@ -39,6 +39,9 @@ def get_cell_based_tiny_net(config):
   elif config.name == 'infer.tiny':
     from .cell_infers import TinyNetwork
     return TinyNetwork(config.C, config.N, config.genotype, config.num_classes)
+  elif config.name == 'infer-macro-nas':
+    from .cell_infers import MacroTinyNetwork
+    return MacroTinyNetwork(config.C, config.N, config.genotype, config.num_classes, config.fixed_genotype, config.pos)
   else:
     raise ValueError('invalid network name : {:}'.format(config.name))
 

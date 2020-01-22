@@ -16,75 +16,48 @@ from datasets     import get_datasets, get_nas_search_loaders
 from procedures   import prepare_seed, prepare_logger, save_checkpoint, copy_checkpoint, get_optim_scheduler
 from utils        import get_model_infos, obtain_accuracy
 from log_utils    import AverageMeter, time_string, convert_secs2time, write_results
-from models       import get_cell_based_tiny_net, get_search_spaces, load_net_from_checkpoint, FeatureMatching, CellStructure as Structure
+from models       import get_cell_based_tiny_net, get_search_spaces, load_net_from_checkpoint, CellStructure as Structure
 from nas_201_api  import NASBench201API as API
 
 
-def search_func(xloader, network, criterion, scheduler, w_optimizer, a_optimizer, epoch_str, print_freq, logger, teacher, matching_layers):
+def search_func(xloader, network, criterion, scheduler, w_optimizer, a_optimizer, epoch_str, print_freq, logger):
   data_time, batch_time = AverageMeter(), AverageMeter()
   base_losses, arch_losses = AverageMeter(), AverageMeter()
   base_top1, base_top5 = AverageMeter(), AverageMeter()
   arch_top1, arch_top5 = AverageMeter(), AverageMeter()
   end = time.time()
   network.train()
-  teacher.eval()
   for step, (base_inputs, base_targets, arch_inputs, arch_targets) in enumerate(xloader):
-    matching_layers.train()
     scheduler.update(None, 1.0 * step / len(xloader))
     base_targets = base_targets.cuda(non_blocking=True)
     arch_targets = arch_targets.cuda(non_blocking=True)
     # measure data loading time
     data_time.update(time.time() - end)
-
     # update the weights
-    with torch.no_grad():
-        _, t_logits, t_outs = teacher(base_inputs, out_all=True)
-    for _ in range(2):
-        w_optimizer.zero_grad()
-        _, logits, st_outs = network(base_inputs, out_all=True)
-        matching_loss = matching_layers(t_outs, st_outs)
-        base_loss1 = torch.mean(matching_loss)
-        base_loss1.backward(retain_graph=True)
-        w_optimizer.step()
     w_optimizer.zero_grad()
-    base_loss2 = criterion(logits, base_targets)
-    base_loss2.backward()
+    _, logits, st_outs = network(base_inputs, out_all=True)
+    base_loss = criterion(logits, base_targets)
+    base_loss.backward()
     w_optimizer.step()
-    with torch.no_grad():
-        base_loss = base_loss1 + base_loss2
     # record
     base_prec1, base_prec5 = obtain_accuracy(logits.data, base_targets.data, topk=(1, 5))
     base_top1.update  (base_prec1.item(), base_inputs.size(0))
     base_top5.update  (base_prec5.item(), base_inputs.size(0))
     base_losses.update(base_loss.item(),  base_inputs.size(0))
-
     # update the architecture-weight
-    with torch.no_grad():
-        _, t_logits, t_outs = teacher(arch_inputs, True)
-    for _ in range(2):
-        a_optimizer.zero_grad()
-        matching_layers.eval()
-        _, logits, st_outs = network(arch_inputs, True)
-        matching_loss = matching_layers(t_outs, st_outs)
-        arch_loss1 = torch.mean(matching_loss)
-        arch_loss1.backward(retain_graph=True)
-        a_optimizer.step()
     a_optimizer.zero_grad()
-    arch_loss2 = criterion(logits, arch_targets)
-    arch_loss2.backward()
+    _, logits, st_outs = network(arch_inputs, True)
+    arch_loss = criterion(logits, arch_targets)
+    arch_loss.backward()
     a_optimizer.step()
-    with torch.no_grad():
-        arch_loss = arch_loss1 + arch_loss2
     # record
     arch_prec1, arch_prec5 = obtain_accuracy(logits.data, arch_targets.data, topk=(1, 5))
     arch_top1.update  (arch_prec1.item(), arch_inputs.size(0))
     arch_top5.update  (arch_prec5.item(), arch_inputs.size(0))
     arch_losses.update(arch_loss.item(),  arch_inputs.size(0))
-
     # measure elapsed time
     batch_time.update(time.time() - end)
     end = time.time()
-
     if step % print_freq == 0 or step + 1 == len(xloader):
       Sstr = '*SEARCH* ' + time_string() + ' [{:}][{:03d}/{:03d}]'.format(epoch_str, step, len(xloader))
       Tstr = 'Time {batch_time.val:.2f} ({batch_time.avg:.2f}) Data {data_time.val:.2f} ({data_time.avg:.2f})'.format(batch_time=batch_time, data_time=data_time)
@@ -138,11 +111,12 @@ def main(xargs):
 
   search_space = get_search_spaces('cell', xargs.search_space_name)
   if xargs.model_config is None:
+    fixed_genotype = Structure.str2structure( xargs.fixed_genotype )
     model_config = dict2config({'name': 'GDAS', 'C': xargs.channel, 'N': xargs.num_cells,
                                 'max_nodes': xargs.max_nodes, 'num_classes': class_num,
                                 'space'    : search_space,
                                 'affine'   : False, 'track_running_stats': bool(xargs.track_running_stats),
-                                "fixed_genotype"    :   Structure.str2structure( xargs.fixed_genotype ), "search_position" : xargs.search_position}, None)
+                                "fixed_genotype"    :   fixed_genotype, "search_position" : xargs.search_position}, None)
   else:
     model_config = load_config(xargs.model_config, {'num_classes': class_num, 'space'    : search_space,
                                                     'affine'     : False, 'track_running_stats': bool(xargs.track_running_stats)}, None)
@@ -169,13 +143,6 @@ def main(xargs):
   last_info, model_base_path, model_best_path = logger.path('info'), logger.path('model'), logger.path('best')
   # Student
   network, criterion = torch.nn.DataParallel(search_model).cuda(), criterion.cuda()
-  # Teacher
-  teacher_base = load_net_from_checkpoint(xargs.teacher_checkpoint)
-  teacher      = torch.nn.DataParallel(teacher_base).cuda()
-  # Matching layer
-  matching_layers = FeatureMatching(teacher, network)
-  matching_layers.beta = xargs.beta
-  matching_layers = torch.nn.DataParallel(matching_layers).cuda()
 
   if last_info.exists() and not xarg.overwrite: # automatically resume from previous checkpoint
     logger.log("=> loading checkpoint of the last-info '{:}' start".format(last_info))
@@ -190,7 +157,6 @@ def main(xargs):
     w_optimizer.load_state_dict ( checkpoint['w_optimizer'] )
     w_scheduler.load_state_dict ( checkpoint['w_scheduler'] )
     a_optimizer.load_state_dict ( checkpoint['a_optimizer'] )
-    matching_layers.load_state_dict( checkpoint['matching_layers'] )
     h_optimizer.load_state_dict ( checkpoint['h_optimizer'] )
     h_scheduler.load_state_dict ( checkpoint['h_scheduler'] )
     logger.log("=> loading checkpoint of the last-info '{:}' start with {:}-th epoch.".format(last_info, start_epoch))
@@ -210,7 +176,7 @@ def main(xargs):
       logger.log('\n[Search the {:}-th epoch] {:}, LR={:}'.format(epoch_str, need_time, min(w_scheduler.get_lr())))
 
       search_w_loss, search_w_top1, search_w_top5, search_a_loss, search_a_top1, search_a_top5 \
-            = search_func(search_loader, network, criterion, w_scheduler, w_optimizer, a_optimizer, epoch_str, xargs.print_freq, logger, teacher, matching_layers)
+            = search_func(search_loader, network, criterion, w_scheduler, w_optimizer, a_optimizer, epoch_str, xargs.print_freq, logger)
       search_time.update(time.time() - start_time)
       logger.log('[{:}] search [base] : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%, time-cost={:.1f} s'.format(epoch_str, search_w_loss, search_w_top1, search_w_top5, search_time.sum))
       logger.log('[{:}] search [arch] : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%'.format(epoch_str, search_a_loss, search_a_top1, search_a_top5))
@@ -275,8 +241,6 @@ if __name__ == '__main__':
   parser.add_argument('--exp_name',           type=str,  default="",   help='Experiment name')
   parser.add_argument('--overwrite',          type=bool, default=False,  help='Overwrite the existing results')
   # Transfer layer
-  parser.add_argument('--teacher_checkpoint', type=str,   default="./.latent-data/basemodels/cifar10/ResNet164.pth",          help='The teacher checkpoint in knowledge distillation.')
-  parser.add_argument('--beta',               type=float, default=0.5, help='matching loss scale')
   parser.add_argument("--fixed_genotype",     type=str,   help="Part cell search architecture")
   parser.add_argument("--search_position",    type=int,   help="Part cell search stage: [0,1,2]")
   # data
@@ -289,7 +253,7 @@ if __name__ == '__main__':
   parser.add_argument('--channel',            type=int,   default=16, help='The number of channels.')
   parser.add_argument('--num_cells',          type=int,   default=2, help='The number of cells in one stage.')
   parser.add_argument('--track_running_stats',type=int,   default=1, choices=[0,1],help='Whether use track_running_stats or not in the BN layer.')
-  parser.add_argument('--config_path',        type=str,   default="configs/nas-benchmark/algos/transfer-N2-GDAS.config", help='The path of the configuration.')
+  parser.add_argument('--config_path',        type=str,   default="configs/nas-benchmark/algos/N2-GDAS.config", help='The path of the configuration.')
   parser.add_argument('--model_config',       type=str,   help='The path of the model configuration. When this arg is set, it will cover max_nodes / channels / num_cells.')
   # architecture leraning rate
   parser.add_argument('--arch_learning_rate', type=float, default=3e-4, help='learning rate for arch encoding')

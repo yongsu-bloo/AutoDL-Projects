@@ -9,11 +9,11 @@ from pathlib import Path
 
 lib_dir = (Path(__file__).parent / '..' / 'lib').resolve()
 if str(lib_dir) not in sys.path: sys.path.insert(0, str(lib_dir))
-from config_utils import load_config, dict2config #, obtain_cls_fitnet_args as obtain_args
+from config_utils import load_config, dict2config
 from procedures   import prepare_seed, prepare_logger, save_checkpoint, copy_checkpoint
 from procedures   import get_optim_scheduler, get_procedures
 from datasets     import get_datasets
-from models       import load_net_from_checkpoint, get_cell_based_tiny_net, get_search_spaces, FeatureMatching, CellStructure as Structure
+from models       import get_cell_based_tiny_net, get_search_spaces, FeatureMatching, CellStructure as Structure
 from models       import obtain_model
 from utils        import get_model_infos
 from log_utils    import AverageMeter, time_string, convert_secs2time, write_results
@@ -64,14 +64,6 @@ def main(args):
       student_config = load_config(args.student_config)
       student_model = obtain_model(student_config)
   network = torch.nn.DataParallel(student_model).cuda()
-  # Teacher
-  teacher_base = load_net_from_checkpoint(args.teacher_checkpoint)
-  teacher      = torch.nn.DataParallel(teacher_base).cuda()
-  print(teacher_base.channels)
-  # Matching layer
-  matching_layers = FeatureMatching(teacher, network)
-  matching_layers.beta = args.beta
-  matching_layers = torch.nn.DataParallel(matching_layers).cuda()
 
   w_optimizer, w_scheduler, criterion = get_optim_scheduler(student_model.parameters(), optim_config)
   criterion = criterion.cuda()
@@ -79,7 +71,6 @@ def main(args):
   flop, param  = get_model_infos(student_model, xshape)
   search_space = get_search_spaces('cell', args.search_space_name)
   logger.log('search space : {:}'.format(search_space))
-  logger.log('Teacher ====>>>>:\n{:}'.format(teacher_base))
   logger.log('Student ====>>>>:\n{:}'.format(student_model))
   logger.log('model information : {:}'.format(student_model.get_message()))
   logger.log('-'*50)
@@ -102,7 +93,6 @@ def main(args):
         genotype = Structure.str2structure( checkpoint['genotype'] )
         nor_train_results = checkpoint['nor_train_results']
         (arch_train_result, arch_test_result) = nor_train_results
-    matching_layers.load_state_dict( checkpoint['matching_layers'] )
     w_scheduler.load_state_dict ( checkpoint['w_scheduler'] )
     w_optimizer.load_state_dict ( checkpoint['w_optimizer'] )
     max_bytes        = checkpoint['max_bytes']
@@ -120,7 +110,6 @@ def main(args):
         genotype = Structure.str2structure( checkpoint['genotype'] )
         nor_train_results = checkpoint['nor_train_results']
         (arch_train_result, arch_test_result) = nor_train_results
-    matching_layers.load_state_dict( checkpoint['matching_layers'] )
     w_scheduler.load_state_dict ( checkpoint['w_scheduler'] )
     w_optimizer.load_state_dict ( checkpoint['w_optimizer'] )
     max_bytes        = checkpoint['max_bytes']
@@ -137,7 +126,6 @@ def main(args):
         genotype = Structure.str2structure( checkpoint['genotype'] )
         nor_train_results = checkpoint['nor_train_results']
         (arch_train_result, arch_test_result) = nor_train_results
-    matching_layers.load_state_dict( checkpoint['matching_layers'] )
     start_epoch = 0
     train_losses = []
     train_acc1s = []
@@ -181,7 +169,7 @@ def main(args):
 
   """Main Training and Evaluation Loop"""
   start_time, train_time, epoch_time, total_epoch = time.time(), AverageMeter(), AverageMeter(), optim_config.epochs + optim_config.warmup
-  train_func, valid_func = get_procedures("fitnet")
+  train_func, valid_func = get_procedures(args.procedure)
   for epoch in range(start_epoch, total_epoch):
     w_scheduler.update(epoch, 0.0)
     need_time = 'Time Left: {:}'.format( convert_secs2time(epoch_time.avg * (total_epoch-epoch), True) )
@@ -190,16 +178,8 @@ def main(args):
     find_best = False
     logger.log('\n***{:s}*** start {:s} {:s}, LR=[{:.6f} ~ {:.6f}], w_scheduler={:}'.format(time_string(), epoch_str, need_time, min(LRs), max(LRs), w_scheduler))
     # train for one epoch
-    if args.bottom_beta is not None:
-        matching_layers.beta = (args.beta-args.bottom_beta)*(1. - (epoch / total_epoch)) + args.bottom_beta
-    if args.procedure == "Simple-KD":
-        kd_coef = 1.
-    elif args.procedure == "Moving-KD":
-        kd_coef = 1. - 0.75*(epoch / total_epoch)
-    else:
-        kd_coef = 0.
-    train_loss, train_acc1, train_acc5, train_matching_loss, train_kd_loss \
-        = train_func(train_loader, teacher, network, matching_layers, criterion, w_scheduler, w_optimizer, optim_config, epoch_str, args.print_freq, logger, kd_coef=kd_coef, version=args.version)
+    train_loss, train_acc1, train_acc5 \
+        = train_func(train_loader, network, criterion, w_scheduler, w_optimizer, optim_config, epoch_str, args.print_freq, logger)
     train_time.update(time.time() - start_time)
     # log the results
     train_losses.append(train_loss); train_acc1s.append(train_acc1); train_acc5s.append(train_acc5)
@@ -208,8 +188,8 @@ def main(args):
     # evaluate the performance
     if (epoch % args.eval_frequency == 0) or (epoch + 1 == total_epoch):
       logger.log('-'*150)
-      valid_loss, valid_acc1, valid_acc5, valid_matching_loss, valid_kd_loss \
-        = valid_func(valid_loader, teacher, network, matching_layers, criterion, optim_config, epoch_str, args.print_freq_eval, logger, kd_coef=kd_coef, version=args.version)
+      valid_loss, valid_acc1, valid_acc5 \
+        = valid_func(valid_loader, network, criterion, optim_config, epoch_str, args.print_freq_eval, logger)
       valid_acc1s[epoch] = valid_acc1
       valid_losses.append(valid_loss); valid_acc5s.append(valid_acc5)
       logger.log('***{:s}*** VALID [{:}] loss = {:.6f}, accuracy@1 = {:.2f}, accuracy@5 = {:.2f} | Best-Valid-Acc@1={:.2f}, Error@1={:.2f}'.format(time_string(), epoch_str, valid_loss, valid_acc1, valid_acc5, valid_acc1s['best'], 100-valid_acc1s['best']))
@@ -236,7 +216,6 @@ def main(args):
           'nor_train_results'   : deepcopy(nor_train_results) if args.student_config is None and args.search_space_name == "nas-bench-201" else {},
           'optim_config' : optim_config._asdict(),
           'student_model'   : student_model.state_dict(),
-          'matching_layers' : matching_layers.state_dict(),
           'w_scheduler'    : w_scheduler.state_dict(),
           'w_optimizer'    : w_optimizer.state_dict(),
           'train_results'   : deepcopy(train_results),
@@ -258,8 +237,8 @@ def main(args):
   logger.log('Finish training/validation in {:} and save final checkpoint into {:}'.format(convert_secs2time(epoch_time.sum, True), logger.path('info')))
   logger.log('-'*200 + '\n')
   if api is not None:
-      logger.log("\nNormal Training Result-12epoch:\n{:}\n".format(api.query_by_arch(genotype, True)))
-      logger.log("\nNormal Training Result-200epoch:\n{:}\n".format(api.query_by_arch(genotype)))
+      logger.log("Normal Training Result-12epoch:\n{:}".format(api.query_by_arch(genotype, True)))
+      logger.log("Normal Training Result-200epoch:\n{:}".format(api.query_by_arch(genotype)))
   logger.close()
   if args.student_config is None and args.search_space_name == "nas-bench-201":
       return arch_train_result['accuracy'], arch_test_result['accuracy'], train_losses[-1], train_acc1s[-1], train_acc5s[-1], valid_losses[-1], valid_acc1s['best'], valid_acc5s[-1]
@@ -274,32 +253,26 @@ if __name__ == '__main__':
   parser.add_argument('--resume'      ,     type=str,                   help='Resume path.')
   parser.add_argument('--init_model'  ,     type=str,                   help='The initialization model path.')
   # Save and Load
-  parser.add_argument('--save_dir',           type=str,   default="./output/transfer-train",     help='Folder to save checkpoints and log.')
+  parser.add_argument('--save_dir',           type=str,   default="./output/nasnet-train",     help='Folder to save checkpoints and log.')
   parser.add_argument('--dataset',            type=str,   default='cifar10', choices=['cifar10', 'cifar100', 'ImageNet16-120'], help='Choose between Cifar10/100 and ImageNet-16.')
   parser.add_argument('--data_path',          type=str,   default=os.environ['TORCH_HOME'] + "/cifar.python", help='Path to dataset')
   parser.add_argument('--cutout_length',      type=int,   default=-1,      help='The cutout length, negative means not use.')
   # channels and number-of-cells
   parser.add_argument('--channel',            type=int,   default=16, help='The number of channels.')
   parser.add_argument('--num_cells',          type=int,   default=5, help='The number of cells in one stage.')
-  # matching layer
-  parser.add_argument('--beta',               type=float, default=1.0, help='matching loss scale')
-  parser.add_argument('--bottom_beta',        type=float, help='moving matching loss scale destination')
   # NAS settings
   parser.add_argument('--search_space_name',  type=str,   default="nas-bench-201", help='The search space name.')
   # Training Options
   parser.add_argument('--procedure'   ,     type=str,        default='basic',       help='The procedure basic prefix.')
-  parser.add_argument('--KD_alpha'    ,     type=float,      default=0.9,           help='The alpha parameter in knowledge distillation.')
-  parser.add_argument('--KD_temperature',   type=float,      default=4,           help='The temperature parameter in knowledge distillation.')
   # Printing
   parser.add_argument('--eval_frequency',   type=int,   default=1,      help='evaluation frequency (default: 200)')
   parser.add_argument('--print_freq',       type=int,   default=100,    help='print frequency (default: 100)')
   parser.add_argument('--print_freq_eval',  type=int,   default=100,    help='print frequency (default: 100)')
   # Configs and Checkpoints
   parser.add_argument('--student_config',        type=str,    help='The path to the student model configuration')
-  parser.add_argument('--optim_config',          type=str,    default="./configs/opts/CIFAR-fitnet-nas102-hint.config",      help='The path to the optimizer configuration')
+  parser.add_argument('--optim_config',          type=str,    default="./configs/opts/CIFAR-fitnet-nas102.config",      help='The path to the optimizer configuration')
   parser.add_argument('--student_checkpoint',    type=str,    help='The student checkpoint.')
-  parser.add_argument('--teacher_checkpoint',    type=str,    default="./.latent-data/basemodels/cifar10/ResNet164.pth",          help='The teacher checkpoint in knowledge distillation.')
-  parser.add_argument('--arch_str',           type=str,   default=None, help="specific architecture to be transfer trained")
+  parser.add_argument('--arch_str',              type=str,   help="specific architecture to be trained")
   parser.add_argument('--fixed_genotype',        type=str,   help="architecture to be trained")
   parser.add_argument('--pos',                   type=int,   help="arch_str position: [0,1,2]")
   # Acceleration
