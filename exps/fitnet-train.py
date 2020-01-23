@@ -49,7 +49,7 @@ def main(args):
       else:
           raise ValueError("student_checkpoint or arch_str must be given")
       if args.fixed_genotype:
-        fixed_genotype = Structure.str2str2structure( args.fixed_genotype )
+        fixed_genotype = Structure.str2structure( args.fixed_genotype )
         student_config = dict2config({'super_type': "nas201-infer", 'name': 'infer-macro-nas',
                                       'C': args.channel, 'N': args.num_cells, 'num_classes': class_num,
                                       'genotype' : genotype,
@@ -280,7 +280,7 @@ if __name__ == '__main__':
   parser.add_argument('--cutout_length',      type=int,   default=-1,      help='The cutout length, negative means not use.')
   # channels and number-of-cells
   parser.add_argument('--channel',            type=int,   default=16, help='The number of channels.')
-  parser.add_argument('--num_cells',          type=int,   default=5, help='The number of cells in one stage.')
+  parser.add_argument('--num_cells',          type=int,   default=2, help='The number of cells in one stage.')
   # matching layer
   parser.add_argument('--beta',               type=float, default=1.0, help='matching loss scale')
   parser.add_argument('--bottom_beta',        type=float, help='moving matching loss scale destination')

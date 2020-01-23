@@ -36,43 +36,42 @@ def main(args):
 
   # get configures
   optim_config = load_config(args.optim_config,
-                             {'class_num': class_num, 'KD_alpha': args.KD_alpha, 'KD_temperature': args.KD_temperature},
-                             logger)
-  #Student
-  if args.student_config is None:
-      if args.student_checkpoint:
+                             {'class_num': class_num}, logger)
+  # Model
+  if args.model_config is None:
+      if args.model_checkpoint:
           # get trained model for architecture sampling
-          student_checkpoint  = torch.load(args.student_checkpoint)
-          genotype = student_checkpoint["genotypes"][-1]
+          model_checkpoint  = torch.load(args.model_checkpoint)
+          genotype = model_checkpoint["genotypes"][-1]
       elif args.arch_str:
           genotype = Structure.str2structure( args.arch_str )
       else:
-          raise ValueError("student_checkpoint or arch_str must be given")
+          raise ValueError("model_checkpoint or arch_str must be given")
       if args.fixed_genotype:
-        fixed_genotype = Structure.str2str2structure( args.fixed_genotype )
-        student_config = dict2config({'super_type': "nas201-infer", 'name': 'infer-macro-nas',
+        fixed_genotype = Structure.str2structure( args.fixed_genotype )
+        model_config = dict2config({'super_type': "nas201-infer", 'name': 'infer-macro-nas',
                                       'C': args.channel, 'N': args.num_cells, 'num_classes': class_num,
                                       'genotype' : genotype,
                                       'fixed_genotype' : fixed_genotype, 'pos' : args.pos}, None)
       else:
-          student_config = dict2config({'super_type': "nas201-infer", 'name': 'infer.tiny',
+          model_config = dict2config({'super_type': "nas201-infer", 'name': 'infer.tiny',
                                     'C': args.channel, 'N': args.num_cells, 'num_classes': class_num,
                                     'genotype' : genotype}, None)
-      student_model = get_cell_based_tiny_net(student_config)
+      model = get_cell_based_tiny_net(model_config)
   else:
       # raise NotImplementedError
-      student_config = load_config(args.student_config)
-      student_model = obtain_model(student_config)
-  network = torch.nn.DataParallel(student_model).cuda()
+      model_config = load_config(args.model_config)
+      model = obtain_model(model_config)
+  network = torch.nn.DataParallel(model).cuda()
 
-  w_optimizer, w_scheduler, criterion = get_optim_scheduler(student_model.parameters(), optim_config)
+  w_optimizer, w_scheduler, criterion = get_optim_scheduler(model.parameters(), optim_config)
   criterion = criterion.cuda()
 
-  flop, param  = get_model_infos(student_model, xshape)
+  flop, param  = get_model_infos(model, xshape)
   search_space = get_search_spaces('cell', args.search_space_name)
   logger.log('search space : {:}'.format(search_space))
-  logger.log('Student ====>>>>:\n{:}'.format(student_model))
-  logger.log('model information : {:}'.format(student_model.get_message()))
+  logger.log('Model ====>>>>:\n{:}'.format(model))
+  logger.log('model information : {:}'.format(model.get_message()))
   logger.log('-'*50)
   logger.log('Params={:.2f} MB, FLOPs={:.2f} M ... = {:.2f} G'.format(param, flop, flop/1e3))
   logger.log('-'*50)
@@ -88,8 +87,8 @@ def main(args):
     last_info   = torch.load(last_info)
     start_epoch = last_info['epoch'] + 1
     checkpoint  = torch.load(last_info['last_checkpoint'])
-    student_model.load_state_dict( checkpoint['student_model'] )
-    if args.student_config is None and args.search_space_name == "nas-bench-201":
+    model.load_state_dict( checkpoint['model'] )
+    if args.model_config is None and args.search_space_name == "nas-bench-201":
         genotype = Structure.str2structure( checkpoint['genotype'] )
         nor_train_results = checkpoint['nor_train_results']
         (arch_train_result, arch_test_result) = nor_train_results
@@ -105,8 +104,8 @@ def main(args):
     assert Path(args.resume).exists(), 'Can not find the resume file : {:}'.format(args.resume)
     checkpoint  = torch.load( args.resume )
     start_epoch = checkpoint['epoch'] + 1
-    student_model.load_state_dict( checkpoint['student_model'] )
-    if args.student_config is None and args.search_space_name == "nas-bench-201":
+    model.load_state_dict( checkpoint['model'] )
+    if args.model_config is None and args.search_space_name == "nas-bench-201":
         genotype = Structure.str2structure( checkpoint['genotype'] )
         nor_train_results = checkpoint['nor_train_results']
         (arch_train_result, arch_test_result) = nor_train_results
@@ -121,8 +120,8 @@ def main(args):
   elif args.init_model is not None:
     assert Path(args.init_model).exists(), 'Can not find the initialization file : {:}'.format(args.init_model)
     checkpoint  = torch.load( args.init_model )
-    student_model.load_state_dict( checkpoint['student_model'] )
-    if args.student_config is None:
+    model.load_state_dict( checkpoint['model'] )
+    if args.model_config is None:
         genotype = Structure.str2structure( checkpoint['genotype'] )
         nor_train_results = checkpoint['nor_train_results']
         (arch_train_result, arch_test_result) = nor_train_results
@@ -138,14 +137,14 @@ def main(args):
     logger.log("=> do not find the last-info file : {:}".format(last_info))
     # genotype sampling
     api = None
-    if args.student_config is None:
+    if args.model_config is None:
         if args.arch_str:
-            genotype = student_config.genotype
-        elif args.student_checkpoint:
+            genotype = model_config.genotype
+        elif args.model_checkpoint:
             # sample an architecture
             genotype = search_model.genotype() # get the best arch
         else:
-            raise ValueError("Student Architecture string or nas checkpoint required")
+            raise ValueError("Architecture string or nas checkpoint required")
 
         if args.search_space_name == "nas-bench-201":
             # Normal Training result from nas201
@@ -211,11 +210,11 @@ def main(args):
           'max_bytes'    : deepcopy(max_bytes),
           'FLOP'         : flop,
           'PARAM'        : param,
-          'model_config' : student_config._asdict(),
-          'genotype'     : genotype.tostr() if args.student_config is None else "",
-          'nor_train_results'   : deepcopy(nor_train_results) if args.student_config is None and args.search_space_name == "nas-bench-201" else {},
+          'model_config' : model_config._asdict(),
+          'genotype'     : genotype.tostr() if args.model_config is None else "",
+          'nor_train_results'   : deepcopy(nor_train_results) if args.model_config is None and args.search_space_name == "nas-bench-201" else {},
           'optim_config' : optim_config._asdict(),
-          'student_model'   : student_model.state_dict(),
+          'model'   : model.state_dict(),
           'w_scheduler'    : w_scheduler.state_dict(),
           'w_optimizer'    : w_optimizer.state_dict(),
           'train_results'   : deepcopy(train_results),
@@ -240,7 +239,7 @@ def main(args):
       logger.log("Normal Training Result-12epoch:\n{:}".format(api.query_by_arch(genotype, True)))
       logger.log("Normal Training Result-200epoch:\n{:}".format(api.query_by_arch(genotype)))
   logger.close()
-  if args.student_config is None and args.search_space_name == "nas-bench-201":
+  if args.model_config is None and args.search_space_name == "nas-bench-201":
       return arch_train_result['accuracy'], arch_test_result['accuracy'], train_losses[-1], train_acc1s[-1], train_acc5s[-1], valid_losses[-1], valid_acc1s['best'], valid_acc5s[-1]
   else:
       return train_losses[-1], train_acc1s[-1], train_acc5s[-1], valid_losses[-1], valid_acc1s['best'], valid_acc5s[-1]
@@ -248,7 +247,6 @@ def main(args):
 if __name__ == '__main__':
   parser = argparse.ArgumentParser("fitnet-main")
   parser.add_argument('--exp_name',         type=str,   default="",     help='Experiment name')
-  parser.add_argument("--version",          type=int,   default=0,      help="training version")
   parser.add_argument('--overwrite',        type=bool,  default=False,  help='Overwrite the existing results')
   parser.add_argument('--resume'      ,     type=str,                   help='Resume path.')
   parser.add_argument('--init_model'  ,     type=str,                   help='The initialization model path.')
@@ -259,7 +257,7 @@ if __name__ == '__main__':
   parser.add_argument('--cutout_length',      type=int,   default=-1,      help='The cutout length, negative means not use.')
   # channels and number-of-cells
   parser.add_argument('--channel',            type=int,   default=16, help='The number of channels.')
-  parser.add_argument('--num_cells',          type=int,   default=5, help='The number of cells in one stage.')
+  parser.add_argument('--num_cells',          type=int,   default=2, help='The number of cells in one stage.')
   # NAS settings
   parser.add_argument('--search_space_name',  type=str,   default="nas-bench-201", help='The search space name.')
   # Training Options
@@ -269,9 +267,9 @@ if __name__ == '__main__':
   parser.add_argument('--print_freq',       type=int,   default=100,    help='print frequency (default: 100)')
   parser.add_argument('--print_freq_eval',  type=int,   default=100,    help='print frequency (default: 100)')
   # Configs and Checkpoints
-  parser.add_argument('--student_config',        type=str,    help='The path to the student model configuration')
+  parser.add_argument('--model_config',        type=str,    help='The path to the model configuration')
   parser.add_argument('--optim_config',          type=str,    default="./configs/opts/CIFAR-fitnet-nas102.config",      help='The path to the optimizer configuration')
-  parser.add_argument('--student_checkpoint',    type=str,    help='The student checkpoint.')
+  parser.add_argument('--model_checkpoint',    type=str,    help='The model checkpoint.')
   parser.add_argument('--arch_str',              type=str,   help="specific architecture to be trained")
   parser.add_argument('--fixed_genotype',        type=str,   help="architecture to be trained")
   parser.add_argument('--pos',                   type=int,   help="arch_str position: [0,1,2]")
@@ -284,9 +282,9 @@ if __name__ == '__main__':
   if args.rand_seed is None or args.rand_seed < 0: args.rand_seed = random.randint(1, 100000)
   if args.exp_name != "":
       if args.arch_str is None:
-          args.save_dir += str(args.version) + "/" + args.exp_name + "/" + args.sample_method + "/" + args.procedure
+          args.save_dir += "/" + args.exp_name + "/" + args.sample_method + "/" + args.procedure
       else:
-          args.save_dir += str(args.version) + "/" + args.exp_name +  "/" + args.procedure + "/Beta{}".format(args.beta)
+          args.save_dir += "/" + args.exp_name +  "/" + args.procedure
 
   results = main(args)
   if args.exp_name != "":
