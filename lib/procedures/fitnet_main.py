@@ -66,8 +66,13 @@ def procedure(xloader, teacher, network, matching_layers, criterion, scheduler, 
     with torch.no_grad():
         teacher_f, teacher_logits, teacher_features = teacher(inputs, out_all=True)
     if mode == 'train': optimizer.zero_grad()
+    student_f, logits, student_features = network(inputs, out_all=True)
+    if isinstance(logits, list):
+        assert len(logits) == 2, 'logits must has {:} items instead of {:}'.format(2, len(logits))
+        logits, logits_aux = logits
+    else:
+        logits, logits_aux = logits, None
     for _ in range(T):
-        student_f, logits, student_features = network(inputs, out_all=True)
         matching_loss = loss_fitnet_fn(teacher_features, student_features, matching_layers)
         if version == 3 and mode == 'train':
             matching_loss.backward(retain_graph=True)
@@ -86,11 +91,6 @@ def procedure(xloader, teacher, network, matching_layers, criterion, scheduler, 
     else:
         raise NotImplementedError
     # add aux loss
-    if isinstance(logits, list):
-      assert len(logits) == 2, 'logits must has {:} items instead of {:}'.format(2, len(logits))
-      logits, logits_aux = logits
-    else:
-      logits, logits_aux = logits, None
     if config is not None and logits_aux is not None and hasattr(config, 'auxiliary') and config.auxiliary > 0:
       loss_aux = criterion(logits_aux, targets)
       loss += config.auxiliary * loss_aux

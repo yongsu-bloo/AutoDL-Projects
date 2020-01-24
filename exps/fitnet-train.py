@@ -69,11 +69,11 @@ def main(args):
   teacher      = torch.nn.DataParallel(teacher_base).cuda()
   print(teacher_base.channels)
   # Matching layer
-  matching_layers = FeatureMatching(teacher, network)
-  matching_layers.beta = args.beta
-  matching_layers = torch.nn.DataParallel(matching_layers).cuda()
+  matching_layers_base = FeatureMatching(teacher, network)
+  matching_layers_base.beta = args.beta
+  matching_layers = torch.nn.DataParallel(matching_layers_base).cuda()
 
-  w_optimizer, w_scheduler, criterion = get_optim_scheduler(student_model.parameters(), optim_config)
+  w_optimizer, w_scheduler, criterion = get_optim_scheduler(list(student_model.parameters()) + list(matching_layers_base.parameters()), optim_config)
   criterion = criterion.cuda()
 
   flop, param  = get_model_infos(student_model, xshape)
@@ -298,7 +298,7 @@ if __name__ == '__main__':
   parser.add_argument('--student_config',        type=str,    help='The path to the student model configuration')
   parser.add_argument('--optim_config',          type=str,    default="./configs/opts/CIFAR-fitnet-nas102-hint.config",      help='The path to the optimizer configuration')
   parser.add_argument('--student_checkpoint',    type=str,    help='The student checkpoint.')
-  parser.add_argument('--teacher_checkpoint',    type=str,    default="./.latent-data/basemodels/cifar10/ResNet164.pth",          help='The teacher checkpoint in knowledge distillation.')
+  parser.add_argument('--teacher_checkpoint',    type=str,    default="./.latent-data/basemodels/cifar10/ResNet110.pth",          help='The teacher checkpoint in knowledge distillation.')
   parser.add_argument('--arch_str',           type=str,   default=None, help="specific architecture to be transfer trained")
   parser.add_argument('--fixed_genotype',        type=str,   help="architecture to be trained")
   parser.add_argument('--pos',                   type=int,   help="arch_str position: [0,1,2]")

@@ -116,7 +116,7 @@ def main(xargs):
                                 'max_nodes': xargs.max_nodes, 'num_classes': class_num,
                                 'space'    : search_space,
                                 'affine'   : False, 'track_running_stats': bool(xargs.track_running_stats),
-                                "fixed_genotype"    :   fixed_genotype, "search_position" : xargs.search_position}, None)
+                                "fixed_genotype"    :   fixed_genotype, "search_position" : xargs.pos}, None)
   else:
     model_config = load_config(xargs.model_config, {'num_classes': class_num, 'space'    : search_space,
                                                     'affine'     : False, 'track_running_stats': bool(xargs.track_running_stats)}, None)
@@ -205,7 +205,7 @@ def main(xargs):
                   'w_scheduler' : w_scheduler.state_dict(),
                   'genotypes'   : deepcopy(genotypes),
                   'fixed_genotype' : deepcopy(fixed_genotype),
-                  "search_position" : xargs.search_position,
+                  "search_position" : xargs.pos,
                   "search_losses" : deepcopy(search_losses),
                   "search_arch_losses" : deepcopy(search_arch_losses),
                   "valid_losses" : deepcopy(valid_losses),
@@ -242,7 +242,7 @@ if __name__ == '__main__':
   parser.add_argument('--overwrite',          type=bool, default=False,  help='Overwrite the existing results')
   # Transfer layer
   parser.add_argument("--fixed_genotype",     type=str,   help="Part cell search architecture")
-  parser.add_argument("--search_position",    type=int,   help="Part cell search stage: [0,1,2]")
+  parser.add_argument("--pos",                type=int,   help="Part cell search stage: [0,1,2]")
   # data
   parser.add_argument('--data_path',          type=str,   default=os.environ['TORCH_HOME'] + "/cifar.python", help='Path to dataset')
   parser.add_argument('--dataset',            type=str,   default='cifar10', choices=['cifar10', 'cifar100', 'ImageNet16-120'], help='Choose between Cifar10/100 and ImageNet-16.')
@@ -262,7 +262,7 @@ if __name__ == '__main__':
   parser.add_argument('--tau_max',            type=float, default=10,   help='The maximum tau for Gumbel')
   # log
   parser.add_argument('--workers',            type=int,   default=8,    help='number of data loading workers')
-  parser.add_argument('--save_dir',           type=str,   default="./output/transfer-search",     help='Folder to save checkpoints and log.')
+  parser.add_argument('--save_dir',           type=str,   default="./output/nasnet-search",     help='Folder to save checkpoints and log.')
   parser.add_argument('--arch_nas_dataset',   type=str,   default=os.environ['TORCH_HOME'] + "/NAS-Bench-201-v1_0-e61699.pth", help='The path to load the architecture dataset (tiny-nas-benchmark).')
   parser.add_argument('--print_freq',         type=int,   default=100, help='print frequency (default: 100)')
   parser.add_argument('--rand_seed',          type=int,   default=-1, help='manual seed')
