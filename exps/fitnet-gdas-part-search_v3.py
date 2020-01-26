@@ -138,11 +138,12 @@ def main(xargs):
 
   search_space = get_search_spaces('cell', xargs.search_space_name)
   if xargs.model_config is None:
+    fixed_genotype = Structure.str2structure( xargs.fixed_genotype )
     model_config = dict2config({'name': 'GDAS', 'C': xargs.channel, 'N': xargs.num_cells,
                                 'max_nodes': xargs.max_nodes, 'num_classes': class_num,
                                 'space'    : search_space,
                                 'affine'   : False, 'track_running_stats': bool(xargs.track_running_stats),
-                                "fixed_genotype"    :   Structure.str2structure( xargs.fixed_genotype ), "search_position" : xargs.search_position}, None)
+                                "fixed_genotype"    :   fixed_genotype, "search_position" : xargs.pos}, None)
   else:
     model_config = load_config(xargs.model_config, {'num_classes': class_num, 'space'    : search_space,
                                                     'affine'     : False, 'track_running_stats': bool(xargs.track_running_stats)}, None)
@@ -239,7 +240,7 @@ def main(xargs):
                   'w_scheduler' : w_scheduler.state_dict(),
                   'genotypes'   : deepcopy(genotypes),
                   'fixed_genotype' : deepcopy(fixed_genotype),
-                  "search_position" : xargs.search_position,
+                  "search_position" : xargs.pos,
                   "search_losses" : deepcopy(search_losses),
                   "search_arch_losses" : deepcopy(search_arch_losses),
                   "valid_losses" : deepcopy(valid_losses),
@@ -278,7 +279,7 @@ if __name__ == '__main__':
   parser.add_argument('--teacher_checkpoint', type=str,   default="./.latent-data/basemodels/cifar10/ResNet110.pth",          help='The teacher checkpoint in knowledge distillation.')
   parser.add_argument('--beta',               type=float, default=1.0, help='matching loss scale')
   parser.add_argument("--fixed_genotype",     type=str,   help="Part cell search architecture")
-  parser.add_argument("--search_position",    type=int,   help="Part cell search stage: [0,1,2]")
+  parser.add_argument("--pos",                type=int,   help="Part cell search stage: [0,1,2]")
   # data
   parser.add_argument('--data_path',          type=str,   default=os.environ['TORCH_HOME'] + "/cifar.python", help='Path to dataset')
   parser.add_argument('--dataset',            type=str,   default='cifar10', choices=['cifar10', 'cifar100', 'ImageNet16-120'], help='Choose between Cifar10/100 and ImageNet-16.')
