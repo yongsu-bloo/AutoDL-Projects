@@ -1,7 +1,7 @@
 ##################################################
 # Copyright (c) Xuanyi Dong [GitHub D-X-Y], 2019 #
 ##################################################
-import sys, time, torch, random, argparse, os
+import sys, time, torch, random, argparse, os, numpy as np
 from PIL     import ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 from copy    import deepcopy
@@ -196,6 +196,7 @@ def main(args):
         kd_coef = 0.
     train_loss, train_acc1, train_acc5, train_matching_loss, train_kd_loss \
         = train_func(train_loader, teacher, network, matching_layers, criterion, w_scheduler, w_optimizer, optim_config, epoch_str, args.print_freq, logger, kd_coef=kd_coef, version=args.version)
+    assert not np.isnan(train_matching_loss) and not np.isnan(train_kd_loss), "NaN detected in the loss."
     train_time.update(time.time() - start_time)
     # log the results
     train_losses.append(train_loss); train_acc1s.append(train_acc1); train_acc5s.append(train_acc5); train_matching_losses.append(train_matching_loss); train_kd_losses.append(train_kd_loss)
