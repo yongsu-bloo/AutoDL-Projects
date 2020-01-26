@@ -23,3 +23,17 @@ def get_procedures(procedure):
   train_func  = train_funcs[procedure]
   valid_func  = valid_funcs[procedure]
   return train_func, valid_func
+
+def get_search_methods(nas_name, version=0):
+    """
+    GDAS
+        version 1: search only by matching_loss
+        version 2: search by (ori_loss + matching_loss)
+        version 3: search by (backward with matching_loss) * T=2 times -> (backward with ori_loss)
+    """
+    from .transfer_search_main import search_func_gdas, search_func_gdas_v1, search_func_gdas_v2, search_func_gdas_v3, valid_func
+    search_funcs = {'GDAS' : {0: search_func_gdas,
+                              1: search_func_gdas_v1,
+                              2: search_func_gdas_v2,
+                              3: search_func_gdas_v3}}
+    return search_funcs[nas_name][version], valid_func
