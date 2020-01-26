@@ -139,7 +139,7 @@ def main(args):
         (arch_train_result, arch_test_result) = nor_train_results
     matching_layers.load_state_dict( checkpoint['matching_layers'] )
     start_epoch = 0
-    train_losses, train_acc1s1, train_acc5s = [], [], []
+    train_losses, train_acc1s, train_acc5s = [], [], []
     train_matching_losses, train_kd_losses = [], []
     valid_losses, valid_acc1s, valid_acc5s = [], {'best': -1}, []
     valid_matching_losses, valid_kd_losses = [], []
