@@ -9,6 +9,7 @@ from copy import deepcopy
 from ..cell_operations import ResNetBasicblock
 from .search_cells     import NAS201SearchCell as SearchCell
 from .genotypes        import Structure
+from ..cell_infers.cells     import InferCell
 
 class TinyNetworkSETN(nn.Module):
 
