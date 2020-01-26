@@ -10,7 +10,6 @@ def main(checkpoint_path, save_dir):
     checkpoint = torch.load(checkpoint_path)
     print("Checkpoint load from {:}".format(checkpoint_path))
     args = checkpoint['args']
-    save_path = os.path.join(save_dir, args.exp_name)
     # epoch = checkpoint['epoch']
     train_results = checkpoint['train_results']
     valid_results = checkpoint['valid_results']
@@ -41,6 +40,7 @@ def main(checkpoint_path, save_dir):
         axes[i].legend()
         print("Plot {:}".format(metrics[i]))
     plt.tight_layout()
+    save_path = os.path.join(save_dir, args.exp_name + "-{}".format(args.rand_seed) + "-v{}".format(args.version) if transfer else "")
     fig.savefig(save_path + ".pdf")
 
 if __name__ == "__main__":
