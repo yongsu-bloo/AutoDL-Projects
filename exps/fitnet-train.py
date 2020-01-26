@@ -170,7 +170,7 @@ def main(args):
             logger.log("Normal Training Result-12epoch:\n{:}".format(api.query_by_arch(genotype, True)))
             logger.log("Normal Training Result-200epoch:\n{:}".format(api.query_by_arch(genotype)))
     start_epoch, max_bytes = 0, {}
-    train_losses, train_acc1s1, train_acc5s = [], [], []
+    train_losses, train_acc1s, train_acc5s = [], [], []
     train_matching_losses, train_kd_losses = [], []
     valid_losses, valid_acc1s, valid_acc5s = [], {'best': -1}, []
     valid_matching_losses, valid_kd_losses = [], []
