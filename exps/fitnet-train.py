@@ -272,7 +272,7 @@ if __name__ == '__main__':
   parser.add_argument('--init_model'  ,     type=str,                   help='The initialization model path.')
   # Save and Load
   parser.add_argument('--save_dir',           type=str,   default="./output/transfer-train",     help='Folder to save checkpoints and log.')
-  parser.add_argument('--dataset',            type=str,   default='cifar10', choices=['cifar10', 'cifar100', 'ImageNet16-120'], help='Choose between Cifar10/100 and ImageNet-16.')
+  parser.add_argument('--dataset',            type=str,   default='cifar100', choices=['cifar10', 'cifar100', 'ImageNet16-120'], help='Choose between Cifar10/100 and ImageNet-16.')
   parser.add_argument('--data_path',          type=str,   default=os.environ['TORCH_HOME'] + "/cifar.python", help='Path to dataset')
   parser.add_argument('--cutout_length',      type=int,   default=-1,      help='The cutout length, negative means not use.')
   # channels and number-of-cells
@@ -295,7 +295,7 @@ if __name__ == '__main__':
   parser.add_argument('--student_config',        type=str,    help='The path to the student model configuration')
   parser.add_argument('--optim_config',          type=str,    default="./configs/opts/CIFAR-fitnet-nas102-hint.config",      help='The path to the optimizer configuration')
   parser.add_argument('--student_checkpoint',    type=str,    help='The student checkpoint.')
-  parser.add_argument('--teacher_checkpoint',    type=str,    default="./.latent-data/basemodels/cifar10/ResNet110.pth",          help='The teacher checkpoint in knowledge distillation.')
+  parser.add_argument('--teacher_checkpoint',    type=str,    default="./.latent-data/basemodels/cifar100/ResNet164.pth",    help='The teacher checkpoint in knowledge distillation.')
   parser.add_argument('--arch_str',           type=str,   default=None, help="specific architecture to be transfer trained")
   parser.add_argument('--fixed_genotype',        type=str,   help="architecture to be trained")
   parser.add_argument('--pos',                   type=int,   help="arch_str position: [0,1,2]")
@@ -307,14 +307,9 @@ if __name__ == '__main__':
   args = parser.parse_args()
   if args.rand_seed is None or args.rand_seed < 0: args.rand_seed = random.randint(1, 100000)
   if args.exp_name != "":
-      if args.arch_str is None:
-          args.save_dir += str(args.version) + "/" + args.exp_name + "/" + args.sample_method + "/" + args.procedure
-      else:
-          args.save_dir += str(args.version) + "/" + args.exp_name +  "/" + args.procedure + "/Beta{}".format(args.beta)
-
+      args.save_dir = "./output/{}-n{}/transfer-train/{}/{}-beta{}".format(args.dataset, args.num_cells, args.version, args.exp_name, args.procedure, args.beta)
   results = main(args)
-  if args.exp_name != "":
-      try:
-          write_results(args, results)
-      except:
-          print(results)
+  try:
+      write_results(args, results)
+  except:
+      print(results)

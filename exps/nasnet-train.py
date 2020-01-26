@@ -281,14 +281,9 @@ if __name__ == '__main__':
   args = parser.parse_args()
   if args.rand_seed is None or args.rand_seed < 0: args.rand_seed = random.randint(1, 100000)
   if args.exp_name != "":
-      if args.arch_str is None:
-          args.save_dir += "/" + args.exp_name + "/" + args.sample_method + "/" + args.procedure
-      else:
-          args.save_dir += "/" + args.exp_name +  "/" + args.procedure
-
+      args.save_dir = "./output/{}-n{}/nasnet-train/{}/{}".format(args.dataset, args.num_cells, args.exp_name, args.procedure)
   results = main(args)
-  if args.exp_name != "":
-      try:
-          write_results(args, results)
-      except:
-          print(results)
+  try:
+      write_results(args, results)
+  except:
+      print(results)

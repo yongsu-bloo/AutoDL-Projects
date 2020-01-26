@@ -12,7 +12,7 @@ from .genotypes        import Structure
 
 class TinyNetworkSETN(nn.Module):
 
-  def __init__(self, C, N, max_nodes, num_classes, search_space, affine, track_running_stats):
+  def __init__(self, C, N, max_nodes, num_classes, search_space, affine, track_running_stats, fixed_genotype=None, search_position=None):
     super(TinyNetworkSETN, self).__init__()
     self._C        = C
     self._layerN   = N
@@ -23,16 +23,24 @@ class TinyNetworkSETN(nn.Module):
 
     layer_channels   = [C    ] * N + [C*2 ] + [C*2  ] * N + [C*4 ] + [C*4  ] * N
     layer_reductions = [False] * N + [True] + [False] * N + [True] + [False] * N
-
+    if search_position is not None:
+        is_search = [False, False, False]
+        is_search[search_position] = True
+        layer_searches = [is_search[0]] * N + [False] + [is_search[1]] * N + [False] + [is_search[2]] * N
+    else:
+        layer_searches = [ not tf for tf in layer_reductions ]
     C_prev, num_edge, edge2index = C, None, None
     self.cells = nn.ModuleList()
-    for index, (C_curr, reduction) in enumerate(zip(layer_channels, layer_reductions)):
+    for index, (C_curr, reduction, is_search) in enumerate(zip(layer_channels, layer_reductions, layer_searches)):
       if reduction:
         cell = ResNetBasicblock(C_prev, C_curr, 2)
-      else:
+      elif is_search:
         cell = SearchCell(C_prev, C_curr, 1, max_nodes, search_space, affine, track_running_stats)
         if num_edge is None: num_edge, edge2index = cell.num_edges, cell.edge2index
         else: assert num_edge == cell.num_edges and edge2index == cell.edge2index, 'invalid {:} vs. {:}.'.format(num_edge, cell.num_edges)
+      else:
+          cell = InferCell(fixed_genotype, C_prev, C_curr, 1)
+
       self.cells.append( cell )
       C_prev = cell.out_dim
     self.op_names   = deepcopy( search_space )
@@ -45,20 +53,6 @@ class TinyNetworkSETN(nn.Module):
     self.mode       = 'urs'
     self.dynamic_cell = None
 
-    def weights_init(m):
-        if isinstance(m, nn.Conv2d):
-            nn.init.uniform_(m.weight, -0.05, 0.05)
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.Linear):
-            nn.init.normal_(m.weight, 0, 0.01)
-            nn.init.constant_(m.bias, 0)
-        # elif isinstance(m, nn.BatchNorm2d):
-        #     nn.init.constant_(m.weight, 1)
-        #     if m.bias is not None:
-        #         nn.init.constant_(m.bias, 0)
-
-    self.apply(weights_init)
   def set_cal_mode(self, mode, dynamic_cell=None):
     assert mode in ['urs', 'joint', 'select', 'dynamic']
     self.mode = mode

@@ -13,12 +13,37 @@ lib_dir = (Path(__file__).parent / '..' / 'lib').resolve()
 if str(lib_dir) not in sys.path: sys.path.insert(0, str(lib_dir))
 from config_utils import load_config, dict2config, configure2str
 from datasets     import get_datasets, get_nas_search_loaders
-from procedures   import prepare_seed, prepare_logger, save_checkpoint, copy_checkpoint, get_optim_scheduler
+from procedures   import prepare_seed, prepare_logger, save_checkpoint, copy_checkpoint, get_optim_scheduler, get_search_methods
 from utils        import get_model_infos, obtain_accuracy
 from log_utils    import AverageMeter, time_string, convert_secs2time, write_results
 from models       import get_cell_based_tiny_net, get_search_spaces, load_net_from_checkpoint, FeatureMatching, CellStructure as Structure
 from nas_201_api  import NASBench201API as API
 
+
+def get_best_arch(xloader, network, n_samples):
+  # setn evaluation
+  with torch.no_grad():
+    network.eval()
+    archs, valid_accs = network.module.return_topK(n_samples), []
+    #print ('obtain the top-{:} architectures'.format(n_samples))
+    loader_iter = iter(xloader)
+    for i, sampled_arch in enumerate(archs):
+      network.module.set_cal_mode('dynamic', sampled_arch)
+      try:
+        inputs, targets = next(loader_iter)
+      except:
+        loader_iter = iter(xloader)
+        inputs, targets = next(loader_iter)
+
+      _, logits = network(inputs)
+      val_top1, val_top5 = obtain_accuracy(logits.cpu().data, targets.data, topk=(1, 5))
+
+      valid_accs.append( val_top1.item() )
+      #print ('--- {:}/{:} : {:} : {:}'.format(i, len(archs), sampled_arch, val_top1))
+
+    best_idx = np.argmax(valid_accs)
+    best_arch, best_valid_acc = archs[best_idx], valid_accs[best_idx]
+    return best_arch, best_valid_acc
 
 def main(args):
   assert torch.cuda.is_available(), 'CUDA is not available.'
@@ -30,17 +55,14 @@ def main(args):
   logger = prepare_logger(args)
 
   train_data, valid_data, xshape, class_num = get_datasets(args.dataset, args.data_path, args.cutout_length)
-  assert args.dataset == 'cifar10', 'currently only support CIFAR-10'
   config = load_config(args.config_path, {'class_num': class_num, 'xshape': xshape}, logger)
-  search_loader, _, valid_loader = get_nas_search_loaders(train_data, valid_data, args.dataset, 'configs/nas-benchmark/', config.batch_size, args.workers)
-  # optim_config = load_config(args.optim_config,
-  #                             {'class_num': class_num, 'KD_alpha': args.KD_alpha, 'KD_temperature': args.KD_temperature},
-  #                             logger)
+  search_loader, _, valid_loader = get_nas_search_loaders(train_data, valid_data, args.dataset, 'configs/nas-benchmark/', \
+                                        config.batch_size if not hasattr(config, "test_batch_size") else (config.batch_size, config.test_batch_size), args.workers)
   logger.log('||||||| {:10s} ||||||| Search-Loader-Num={:}, Valid-Loader-Num={:}, batch size={:}'.format(args.dataset, len(search_loader), len(valid_loader), config.batch_size))
   logger.log('||||||| {:10s} ||||||| Config={:}'.format(args.dataset, config))
 
   search_space = get_search_spaces('cell', args.search_space_name)
-  if args.model_config is None:
+  if args.fixed_genotype:
     fixed_genotype = Structure.str2structure( args.fixed_genotype )
     model_config = dict2config({'name': args.nas_name, 'C': args.channel, 'N': args.num_cells,
                                 'max_nodes': args.max_nodes, 'num_classes': class_num,
@@ -48,13 +70,25 @@ def main(args):
                                 'affine'   : False, 'track_running_stats': bool(args.track_running_stats),
                                 "fixed_genotype"    :   fixed_genotype, "search_position" : args.pos}, None)
   else:
-    model_config = load_config(args.model_config, {'num_classes': class_num, 'space'    : search_space,
-                                                    'affine'     : False, 'track_running_stats': bool(args.track_running_stats)}, None)
+    model_config = dict2config({'name': args.nas_name, 'C': args.channel, 'N': args.num_cells,
+                                'max_nodes': args.max_nodes, 'num_classes': class_num,
+                                'space'    : search_space,
+                                'affine'   : False, 'track_running_stats': bool(args.track_running_stats)}, None)
   logger.log('search space : {:}'.format(search_space))
   logger.log('model-config : {:}'.format(model_config))
 
+  # Student
   search_model = get_cell_based_tiny_net(model_config)
-  w_optimizer, w_scheduler, criterion = get_optim_scheduler(search_model.get_weights(), config)
+  network = torch.nn.DataParallel(search_model).cuda()
+  # Teacher
+  teacher_base = load_net_from_checkpoint(args.teacher_checkpoint)
+  teacher      = torch.nn.DataParallel(teacher_base).cuda()
+  # Matching layer
+  matching_layers_base = FeatureMatching(teacher, network)
+  matching_layers_base.beta = args.beta
+  matching_layers = torch.nn.DataParallel(matching_layers_base).cuda()
+
+  w_optimizer, w_scheduler, criterion = get_optim_scheduler(list(search_model.get_weights()) + list(matching_layers_base.parameters()), config)
   a_optimizer = torch.optim.Adam(search_model.get_alphas(), lr=args.arch_learning_rate, betas=(0.5, 0.999), weight_decay=args.arch_weight_decay)
   logger.log('w-optimizer : {:}'.format(w_optimizer))
   logger.log('a-optimizer : {:}'.format(a_optimizer))
@@ -71,15 +105,7 @@ def main(args):
     logger.log('{:} create API = {:} done'.format(time_string(), api))
 
   last_info, model_base_path, model_best_path = logger.path('info'), logger.path('model'), logger.path('best')
-  # Student
-  network, criterion = torch.nn.DataParallel(search_model).cuda(), criterion.cuda()
-  # Teacher
-  teacher_base = load_net_from_checkpoint(args.teacher_checkpoint)
-  teacher      = torch.nn.DataParallel(teacher_base).cuda()
-  # Matching layer
-  matching_layers = FeatureMatching(teacher, network)
-  matching_layers.beta = args.beta
-  matching_layers = torch.nn.DataParallel(matching_layers).cuda()
+  criterion = criterion.cuda()
 
   if last_info.exists() and not xarg.overwrite: # automatically resume from previous checkpoint
     logger.log("=> loading checkpoint of the last-info '{:}' start".format(last_info))
@@ -105,13 +131,15 @@ def main(args):
     valid_losses, valid_acc1s, valid_acc5s = {}, {'best': -1}, {}
 
   # start training
-  start_time, search_time, epoch_time, total_epoch = time.time(), AverageMeter(), AverageMeter(), config.epochs + config.warmup
   search_func, valid_func = get_search_methods(args.nas_name, args.version)
+  start_time, search_time, epoch_time, total_epoch = time.time(), AverageMeter(), AverageMeter(), config.epochs + config.warmup
+  valid_time = AverageMeter()
   for epoch in range(start_epoch, total_epoch):
       w_scheduler.update(epoch, 0.0)
       need_time = 'Time Left: {:}'.format( convert_secs2time(epoch_time.val * (total_epoch-epoch), True) )
       epoch_str = '{:03d}-{:03d}'.format(epoch, total_epoch)
-      search_model.set_tau( args.tau_max - (args.tau_max-args.tau_min) * epoch / (total_epoch-1) )
+      if args.nas_name == "GDAS":
+          search_model.set_tau( args.tau_max - (args.tau_max-args.tau_min) * epoch / (total_epoch-1) )
       logger.log('\n[Search the {:}-th epoch] {:}, LR={:}'.format(epoch_str, need_time, min(w_scheduler.get_lr())))
 
       search_w_loss, search_w_top1, search_w_top5, search_a_loss, search_a_top1, search_a_top5 \
@@ -120,15 +148,22 @@ def main(args):
       logger.log('[{:}] search [base] : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%, time-cost={:.1f} s'.format(epoch_str, search_w_loss, search_w_top1, search_w_top5, search_time.sum))
       logger.log('[{:}] search [arch] : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%'.format(epoch_str, search_a_loss, search_a_top1, search_a_top5))
       # validation
+      valid_start_time = time.time()
+      if args.nas_name == "SETN":
+          genotype, _ = get_best_arch(valid_loader, network, args.select_num)
+          network.module.set_cal_mode('dynamic', genotype)
+      else:
+          genotype = search_model.genotype()
       valid_a_loss , valid_a_top1 , valid_a_top5  = valid_func(valid_loader, network, criterion)
-      logger.log('[{:}] evaluate : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%'.format(epoch_str, valid_a_loss, valid_a_top1, valid_a_top5))
+      valid_time.update(time.time() - valid_start_time)
+      logger.log('[{:}] evaluate : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%, time-cost={:1f} s'.format(epoch_str, valid_a_loss, valid_a_top1, valid_a_top5, valid_time.sum))
       # check the best accuracy
       search_losses[epoch] = search_w_loss
       search_arch_losses[epoch] = search_a_loss
       valid_losses[epoch] = valid_a_loss
       valid_acc1s[epoch] = valid_a_top1
       valid_acc5s[epoch] = valid_a_top5
-      genotypes[epoch] = search_model.genotype()
+      genotypes[epoch] = genotype
       logger.log('<<<--->>> The {:}-th epoch : {:}'.format(epoch_str, genotypes[epoch]))
       if valid_a_top1 > valid_acc1s['best']:
           valid_acc1s['best'] = valid_a_top1
@@ -143,7 +178,7 @@ def main(args):
                   'a_optimizer' : a_optimizer.state_dict(),
                   'w_scheduler' : w_scheduler.state_dict(),
                   'genotypes'   : deepcopy(genotypes),
-                  'fixed_genotype' : deepcopy(fixed_genotype),
+                  'fixed_genotype' : args.fixed_genotype,
                   "search_position" : args.pos,
                   "search_losses" : deepcopy(search_losses),
                   "search_arch_losses" : deepcopy(search_arch_losses),
@@ -162,7 +197,7 @@ def main(args):
           copy_checkpoint(model_base_path, model_best_path, logger)
       with torch.no_grad():
           logger.log('arch-parameters :\n{:}'.format( nn.functional.softmax(search_model.arch_parameters, dim=-1).cpu() ))
-      if api is not None: logger.log('{:}'.format(api.query_by_arch( genotypes[epoch] )))
+      if api is not None: logger.log('{:}'.format(api.query_by_arch( genotype )))
       # measure elapsed time
       epoch_time.update(time.time() - start_time)
       start_time = time.time()
@@ -171,6 +206,9 @@ def main(args):
   # check the performance from the architecture dataset
   logger.log('{:} : run {:} epochs, cost {:.1f} s, last-geno is {:}.'.format(args.nas_name, total_epoch, search_time.sum, genotypes[total_epoch-1]))
   if api is not None: logger.log('{:}'.format( api.query_by_arch(genotypes[total_epoch-1]) ))
+
+  logger.log('The best-geno is {:} with Valid Acc {:}.'.format(genotypes['best'], valid_acc1s['best']))
+  if api is not None: logger.log('{:}'.format( api.query_by_arch(genotypes['best']) ))
   logger.close()
 
 
@@ -182,27 +220,30 @@ if __name__ == '__main__':
   parser.add_argument("--version",            type=int,  default=0,      help="Search method version")
   parser.add_argument('--overwrite',          type=bool, default=False,  help='Overwrite the existing results')
   # Transfer layer
-  parser.add_argument('--teacher_checkpoint', type=str,   default="./.latent-data/basemodels/cifar10/ResNet110.pth",          help='The teacher checkpoint in knowledge distillation.')
-  parser.add_argument('--beta',               type=float, default=1.0, help='matching loss scale')
+  parser.add_argument('--teacher_checkpoint', type=str,   default="./.latent-data/basemodels/cifar100/ResNet164.pth",          help='The teacher checkpoint in knowledge distillation.')
+  parser.add_argument('--beta',               type=float, default=0.5, help='matching loss scale')
   parser.add_argument("--fixed_genotype",     type=str,   help="Part cell search architecture")
   parser.add_argument("--pos",                type=int,   help="Part cell search stage: [0,1,2]")
   # data
   parser.add_argument('--data_path',          type=str,   default=os.environ['TORCH_HOME'] + "/cifar.python", help='Path to dataset')
-  parser.add_argument('--dataset',            type=str,   default='cifar10', choices=['cifar10', 'cifar100', 'ImageNet16-120'], help='Choose between Cifar10/100 and ImageNet-16.')
+  parser.add_argument('--dataset',            type=str,   default='cifar100', choices=['cifar10', 'cifar100', 'ImageNet16-120'], help='Choose between Cifar10/100 and ImageNet-16.')
   parser.add_argument('--cutout_length',      type=int,   default=-1,      help='The cutout length, negative means not use.')
   # channels and number-of-cells
   parser.add_argument('--search_space_name',  type=str,   default="nas-bench-201", help='The search space name.')
   parser.add_argument('--max_nodes',          type=int,   default=4, help='The maximum number of nodes.')
   parser.add_argument('--channel',            type=int,   default=16, help='The number of channels.')
   parser.add_argument('--num_cells',          type=int,   default=2, help='The number of cells in one stage.')
-  parser.add_argument('--track_running_stats',type=int,   default=1, choices=[0,1],help='Whether use track_running_stats or not in the BN layer.')
-  parser.add_argument('--config_path',        type=str,   default="configs/nas-benchmark/algos/transfer-N2-GDAS.config", help='The path of the configuration.')
+  parser.add_argument('--track_running_stats',type=int,   default=0, choices=[0,1],help='Whether use track_running_stats or not in the BN layer.')
+  parser.add_argument('--config_path',        type=str,   default="configs/nas-benchmark/transfer-N2.config", help='The path of the configuration.')
   parser.add_argument('--model_config',       type=str,   help='The path of the model configuration. When this arg is set, it will cover max_nodes / channels / num_cells.')
   # architecture leraning rate
   parser.add_argument('--arch_learning_rate', type=float, default=3e-4, help='learning rate for arch encoding')
   parser.add_argument('--arch_weight_decay',  type=float, default=1e-3, help='weight decay for arch encoding')
+  # GDAS
   parser.add_argument('--tau_min',            type=float, default=0.1,  help='The minimum tau for Gumbel')
   parser.add_argument('--tau_max',            type=float, default=10,   help='The maximum tau for Gumbel')
+  # SETN
+  parser.add_argument("--select_num",         type=int,   default=100,  help="The number of architectures to be sampled for evaluation")
   # log
   parser.add_argument('--workers',            type=int,   default=8,    help='number of data loading workers')
   parser.add_argument('--save_dir',           type=str,   default="./output/transfer-search",     help='Folder to save checkpoints and log.')
@@ -212,5 +253,5 @@ if __name__ == '__main__':
   args = parser.parse_args()
   if args.rand_seed is None or args.rand_seed < 0: args.rand_seed = random.randint(1, 100000)
   if args.exp_name != "":
-      args.save_dir = args.save_dir + "/" + args.exp_name
+      args.save_dir = "./output/{}-n{}/transfer-search/{}".format(args.dataset, args.num_cells, args.exp_name)
   main(args)
