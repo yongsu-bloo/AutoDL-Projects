@@ -53,6 +53,7 @@ def main(args):
   torch.set_num_threads( args.workers )
   prepare_seed(args.rand_seed)
   logger = prepare_logger(args)
+  total_time = time.time()
 
   train_data, valid_data, xshape, class_num = get_datasets(args.dataset, args.data_path, args.cutout_length)
   config = load_config(args.config_path, {'class_num': class_num, 'xshape': xshape}, logger)
@@ -196,6 +197,9 @@ def main(args):
   # check the performance from the architecture dataset
   logger.log('{:} : run {:} epochs, cost {:.1f} s, last-geno is {:}.'.format(args.nas_name, total_epoch, search_time.sum, genotypes[total_epoch-1]))
   if api is not None: logger.log('{:}'.format( api.query_by_arch(genotypes[total_epoch-1]) ))
+  logger.log('The best-geno is {:} with Valid Acc {:}.'.format(genotypes['best'], valid_acc1s['best']))
+  if api is not None: logger.log('{:}'.format( api.query_by_arch(genotypes['best']) ))
+  logger.log("[Time cose] total: {:}, search: {:}, valid: {:}".format(convert_secs2time(time.time() - total_time), convert_secs2time(search_time.sum), convert_secs2time(valid_time.sum)))
   logger.close()
 
 
