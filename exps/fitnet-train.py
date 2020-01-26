@@ -108,8 +108,8 @@ def main(args):
     max_bytes        = checkpoint['max_bytes']
     train_results = checkpoint['train_results']
     valid_results = checkpoint['valid_results']
-    (train_losses, train_acc1s, train_acc5s) = train_results
-    (valid_losses, valid_acc1s, valid_acc5s) = valid_results
+    (train_losses, train_acc1s, train_acc5s, train_matching_losses, train_kd_losses) = train_results
+    (valid_losses, valid_acc1s, valid_acc5s, valid_matching_losses, valid_kd_losses) = valid_results
     logger.log("=> loading checkpoint of the last-info '{:}' start with {:}-th epoch.".format(last_info, start_epoch))
   elif args.resume is not None:
     assert Path(args.resume).exists(), 'Can not find the resume file : {:}'.format(args.resume)
@@ -126,8 +126,8 @@ def main(args):
     max_bytes        = checkpoint['max_bytes']
     train_results = checkpoint['train_results']
     valid_results = checkpoint['valid_results']
-    (train_losses, train_acc1s, train_acc5s) = train_results
-    (valid_losses, valid_acc1s, valid_acc5s) = valid_results
+    (train_losses, train_acc1s, train_acc5s, train_matching_losses, train_kd_losses) = train_results
+    (valid_losses, valid_acc1s, valid_acc5s, valid_matching_losses, valid_kd_losses) = valid_results
     logger.log("=> loading checkpoint from '{:}' start with {:}-th epoch.".format(args.resume, start_epoch))
   elif args.init_model is not None:
     assert Path(args.init_model).exists(), 'Can not find the initialization file : {:}'.format(args.init_model)
@@ -139,12 +139,10 @@ def main(args):
         (arch_train_result, arch_test_result) = nor_train_results
     matching_layers.load_state_dict( checkpoint['matching_layers'] )
     start_epoch = 0
-    train_losses = []
-    train_acc1s = []
-    train_acc5s = []
-    valid_losses = []
-    valid_acc1s = {'best': -1}
-    valid_acc5s = []
+    train_losses, train_acc1s1, train_acc5s = [], [], []
+    train_matching_losses, train_kd_losses = [], []
+    valid_losses, valid_acc1s, valid_acc5s = [], {'best': -1}, []
+    valid_matching_losses, valid_kd_losses = [], []
     logger.log('=> initialize the model from {:}'.format( args.init_model ))
   else:
     logger.log("=> do not find the last-info file : {:}".format(last_info))
@@ -172,12 +170,10 @@ def main(args):
             logger.log("Normal Training Result-12epoch:\n{:}".format(api.query_by_arch(genotype, True)))
             logger.log("Normal Training Result-200epoch:\n{:}".format(api.query_by_arch(genotype)))
     start_epoch, max_bytes = 0, {}
-    train_losses = []
-    train_acc1s = []
-    train_acc5s = []
-    valid_losses = []
-    valid_acc1s = {'best': -1}
-    valid_acc5s = []
+    train_losses, train_acc1s1, train_acc5s = [], [], []
+    train_matching_losses, train_kd_losses = [], []
+    valid_losses, valid_acc1s, valid_acc5s = [], {'best': -1}, []
+    valid_matching_losses, valid_kd_losses = [], []
 
   """Main Training and Evaluation Loop"""
   start_time, train_time, epoch_time, total_epoch = time.time(), AverageMeter(), AverageMeter(), optim_config.epochs + optim_config.warmup
@@ -202,7 +198,7 @@ def main(args):
         = train_func(train_loader, teacher, network, matching_layers, criterion, w_scheduler, w_optimizer, optim_config, epoch_str, args.print_freq, logger, kd_coef=kd_coef, version=args.version)
     train_time.update(time.time() - start_time)
     # log the results
-    train_losses.append(train_loss); train_acc1s.append(train_acc1); train_acc5s.append(train_acc5)
+    train_losses.append(train_loss); train_acc1s.append(train_acc1); train_acc5s.append(train_acc5); train_matching_losses.append(train_matching_loss); train_kd_losses.append(train_kd_loss)
     logger.log('***{:s}*** TRAIN [{:}] loss = {:.6f}, accuracy-1 = {:.2f}, accuracy-5 = {:.2f} time-cost = {:.1f}'.format(time_string(), epoch_str, train_loss, train_acc1, train_acc5, train_time.sum))
 
     # evaluate the performance
@@ -211,7 +207,7 @@ def main(args):
       valid_loss, valid_acc1, valid_acc5, valid_matching_loss, valid_kd_loss \
         = valid_func(valid_loader, teacher, network, matching_layers, criterion, optim_config, epoch_str, args.print_freq_eval, logger, kd_coef=kd_coef, version=args.version)
       valid_acc1s[epoch] = valid_acc1
-      valid_losses.append(valid_loss); valid_acc5s.append(valid_acc5)
+      valid_losses.append(valid_loss); valid_acc5s.append(valid_acc5); valid_matching_losses.append(valid_matching_loss); valid_kd_losses.append(valid_kd_loss)
       logger.log('***{:s}*** VALID [{:}] loss = {:.6f}, accuracy@1 = {:.2f}, accuracy@5 = {:.2f} | Best-Valid-Acc@1={:.2f}, Error@1={:.2f}'.format(time_string(), epoch_str, valid_loss, valid_acc1, valid_acc5, valid_acc1s['best'], 100-valid_acc1s['best']))
       if valid_acc1 > valid_acc1s['best']:
         valid_acc1s['best'] = valid_acc1
@@ -223,8 +219,8 @@ def main(args):
     if epoch % 10 == 0: torch.cuda.empty_cache()
 
     # save checkpoint
-    train_results = (train_losses, train_acc1s, train_acc5s)
-    valid_results = (valid_losses, valid_acc1s, valid_acc5s)
+    train_results = (train_losses, train_acc1s, train_acc5s, train_matching_losses, train_kd_losses)
+    valid_results = (valid_losses, valid_acc1s, valid_acc5s, valid_matching_losses, valid_kd_losses)
     save_path = save_checkpoint({
           'epoch'        : epoch,
           'args'         : deepcopy(args),
