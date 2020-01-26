@@ -279,7 +279,7 @@ if __name__ == '__main__':
   parser.add_argument('--channel',            type=int,   default=16, help='The number of channels.')
   parser.add_argument('--num_cells',          type=int,   default=2, help='The number of cells in one stage.')
   # matching layer
-  parser.add_argument('--beta',               type=float, default=1.0, help='matching loss scale')
+  parser.add_argument('--beta',               type=float, default=0.5, help='matching loss scale')
   parser.add_argument('--bottom_beta',        type=float, help='moving matching loss scale destination')
   # NAS settings
   parser.add_argument('--search_space_name',  type=str,   default="nas-bench-201", help='The search space name.')

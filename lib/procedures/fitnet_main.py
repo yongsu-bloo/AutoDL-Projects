@@ -39,7 +39,7 @@ def procedure(xloader, teacher, network, matching_layers, criterion, scheduler, 
   """
     version 1: training matching_loss only
     version 2: training CLS_loss(+KD_loss) + matching_loss
-    version 3: training CLS_loss 2 times -> training matching_loss
+    version 3: training matching_loss 2 times -> training CLS_loss(+KD_loss)
   """
   data_time, batch_time, losses, top1, top5 = AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter()
   Ttop1, Ttop5 = AverageMeter(), AverageMeter()
