@@ -307,7 +307,7 @@ if __name__ == '__main__':
   args = parser.parse_args()
   if args.rand_seed is None or args.rand_seed < 0: args.rand_seed = random.randint(1, 100000)
   if args.exp_name != "":
-      args.save_dir = "./output/{}-n{}/transfer-train/{}/{}-beta{}".format(args.dataset, args.num_cells, args.version, args.exp_name, args.procedure, args.beta)
+      args.save_dir = "./output/{}-n{}/transfer-train-v{}/{}-beta{}".format(args.dataset, args.num_cells, args.version, args.exp_name, args.procedure, args.beta)
   results = main(args)
   try:
       write_results(args, results)

@@ -209,7 +209,7 @@ def main(args):
   if api is not None: logger.log('{:}'.format( api.query_by_arch(genotypes[total_epoch-1]) ))
   logger.log('The best-geno is {:} with Valid Acc {:}.'.format(genotypes['best'], valid_acc1s['best']))
   if api is not None: logger.log('{:}'.format( api.query_by_arch(genotypes['best']) ))
-  logger.log("[Time cose] total: {:}, search: {:}, valid: {:}".format(convert_secs2time(time.time() - total_time), convert_secs2time(search_time.sum), convert_secs2time(valid_time.sum)))
+  logger.log("[Time cost] total: {:}, search: {:}, valid: {:}".format(convert_secs2time(time.time() - total_time, True), convert_secs2time(search_time.sum, True), convert_secs2time(valid_time.sum, True)))
   logger.close()
 
 
@@ -254,5 +254,5 @@ if __name__ == '__main__':
   args = parser.parse_args()
   if args.rand_seed is None or args.rand_seed < 0: args.rand_seed = random.randint(1, 100000)
   if args.exp_name != "":
-      args.save_dir = "./output/{}-n{}/transfer-search/{}".format(args.dataset, args.num_cells, args.exp_name)
+      args.save_dir = "./output/{}-n{}/transfer-search-v{}/{}".format(args.dataset, args.num_cells, args.version, args.exp_name)
   main(args)

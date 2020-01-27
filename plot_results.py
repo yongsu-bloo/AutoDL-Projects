@@ -41,7 +41,8 @@ def main(checkpoint_path, save_dir):
         print("Plot {:}".format(metrics[i]))
     plt.tight_layout()
     save_path = os.path.join(save_dir, args.exp_name + "-{}".format(args.rand_seed) + "-v{}".format(args.version) if transfer else "")
-    fig.savefig(save_path + ".pdf")
+    fig.savefig(save_path + ".png")
+    print("Save to {:}".format(save_path + ".png"))
 
 if __name__ == "__main__":
     checkpoint_path = sys.argv[1]
