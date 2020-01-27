@@ -105,7 +105,7 @@ def procedure(xloader, teacher, network, matching_layers, criterion, scheduler, 
         kd_losses.update(loss_KD.item(), inputs.size(0))
     # student
     sprec1, sprec5 = obtain_accuracy(logits.data, targets.data, topk=(1, 5))
-    losses.update(loss.item(),   inputs.size(0))
+    losses.update(loss_KD.item() + matching_loss.item(), inputs.size(0))
     top1.update  (sprec1.item(), inputs.size(0))
     top5.update  (sprec5.item(), inputs.size(0))
     # teacher

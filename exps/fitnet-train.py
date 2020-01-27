@@ -67,7 +67,6 @@ def main(args):
   # Teacher
   teacher_base = load_net_from_checkpoint(args.teacher_checkpoint)
   teacher      = torch.nn.DataParallel(teacher_base).cuda()
-  print(teacher_base.channels)
   # Matching layer
   matching_layers_base = FeatureMatching(teacher, network)
   matching_layers_base.beta = args.beta
@@ -77,10 +76,8 @@ def main(args):
   criterion = criterion.cuda()
 
   flop, param  = get_model_infos(student_model, xshape)
-  search_space = get_search_spaces('cell', args.search_space_name)
-  logger.log('search space : {:}'.format(search_space))
   logger.log('Teacher ====>>>>:\n{:}'.format(teacher_base))
-  logger.log('Student ====>>>>:\n{:}'.format(student_model))
+  # logger.log('Student ====>>>>:\n{:}'.format(student_model))
   logger.log('model information : {:}'.format(student_model.get_message()))
   logger.log('-'*50)
   logger.log('Params={:.2f} MB, FLOPs={:.2f} M ... = {:.2f} G'.format(param, flop, flop/1e3))
