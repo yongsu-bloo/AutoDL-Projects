@@ -292,7 +292,7 @@ if __name__ == '__main__':
   parser.add_argument('--student_config',        type=str,    help='The path to the student model configuration')
   parser.add_argument('--optim_config',          type=str,    default="./configs/opts/CIFAR-fitnet-nas102-hint.config",      help='The path to the optimizer configuration')
   parser.add_argument('--student_checkpoint',    type=str,    help='The student checkpoint.')
-  parser.add_argument('--teacher_checkpoint',    type=str,    default="./.latent-data/basemodels/cifar100/ResNet164.pth",    help='The teacher checkpoint in knowledge distillation.')
+  parser.add_argument('--teacher_checkpoint',    type=str,    default="./.latent-data/basemodels/cifar100/ResNet110.pth",    help='The teacher checkpoint in knowledge distillation.')
   parser.add_argument('--arch_str',           type=str,   default=None, help="specific architecture to be transfer trained")
   parser.add_argument('--fixed_genotype',        type=str,   help="architecture to be trained")
   parser.add_argument('--pos',                   type=int,   help="arch_str position: [0,1,2]")
@@ -304,7 +304,7 @@ if __name__ == '__main__':
   args = parser.parse_args()
   if args.rand_seed is None or args.rand_seed < 0: args.rand_seed = random.randint(1, 100000)
   if args.exp_name != "":
-      args.save_dir = "./output/{}-n{}/transfer-train-v{}/{}-beta{}".format(args.dataset, args.num_cells, args.version, args.exp_name, args.procedure, args.beta)
+      args.save_dir = "./output/{}-n{}/transfer-train-v{}/{}/{}-beta{}".format(args.dataset, args.num_cells, args.version, args.exp_name, args.procedure, args.beta)
   results = main(args)
   try:
       write_results(args, results)

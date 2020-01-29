@@ -221,7 +221,7 @@ if __name__ == '__main__':
   parser.add_argument("--version",            type=int,  default=0,      help="Search method version")
   parser.add_argument('--overwrite',          type=bool, default=False,  help='Overwrite the existing results')
   # Transfer layer
-  parser.add_argument('--teacher_checkpoint', type=str,   default="./.latent-data/basemodels/cifar100/ResNet164.pth",          help='The teacher checkpoint in knowledge distillation.')
+  parser.add_argument('--teacher_checkpoint', type=str,   default="./.latent-data/basemodels/cifar100/ResNet110.pth",          help='The teacher checkpoint in knowledge distillation.')
   parser.add_argument('--beta',               type=float, default=0.5, help='matching loss scale')
   parser.add_argument("--fixed_genotype",     type=str,   help="Part cell search architecture")
   parser.add_argument("--pos",                type=int,   help="Part cell search stage: [0,1,2]")
