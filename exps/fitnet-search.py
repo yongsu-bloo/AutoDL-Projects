@@ -145,10 +145,15 @@ def main(args):
       if args.nas_name == "GDAS":
           search_model.set_tau( args.tau_max - (args.tau_max-args.tau_min) * epoch / (total_epoch-1) )
       logger.log('\n[Search the {:}-th epoch] {:}, LR={:}'.format(epoch_str, need_time, min(w_scheduler.get_lr())))
-
+      if args.procedure == "Simple-KD":
+          kd_coef = 1.
+      elif args.procedure == "Moving-KD":
+          kd_coef = 1. - 0.75*(epoch / total_epoch)
+      else:
+          kd_coef = 0.
       search_w_loss, search_w_top1, search_w_top5, search_a_loss, search_a_top1, search_a_top5 \
             = search_func(search_loader, network, criterion, w_scheduler, w_optimizer, a_optimizer, epoch_str, args.print_freq, logger, \
-                            teacher, matching_layers, config)
+                            teacher, matching_layers, config, kd_coef)
       search_time.update(time.time() - start_time)
       logger.log('[{:}] search [base] : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%, time-cost={:.1f} s'.format(epoch_str, search_w_loss, search_w_top1, search_w_top5, search_time.sum))
       logger.log('[{:}] search [arch] : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%'.format(epoch_str, search_a_loss, search_a_top1, search_a_top5))

@@ -108,7 +108,7 @@ def search_func_setn(xloader, network, criterion, scheduler, w_optimizer, a_opti
       #print (network.module.arch_parameters)
   return base_losses.avg, base_top1.avg, base_top5.avg, arch_losses.avg, arch_top1.avg, arch_top5.avg
 
-def search_func_setn_v2(xloader, network, criterion, scheduler, w_optimizer, a_optimizer, epoch_str, print_freq, logger, teacher, matching_layers, config=None):
+def search_func_setn_v2(xloader, network, criterion, scheduler, w_optimizer, a_optimizer, epoch_str, print_freq, logger, teacher, matching_layers, config=None, kd_coef=0.):
   data_time, batch_time = AverageMeter(), AverageMeter()
   base_losses, arch_losses = AverageMeter(), AverageMeter()
   base_top1, base_top5 = AverageMeter(), AverageMeter()
@@ -182,7 +182,7 @@ def search_func_setn_v2(xloader, network, criterion, scheduler, w_optimizer, a_o
   return base_losses.avg, base_top1.avg, base_top5.avg, arch_losses.avg, arch_top1.avg, arch_top5.avg
 
 
-def search_func_setn_v3(xloader, network, criterion, scheduler, w_optimizer, a_optimizer, epoch_str, print_freq, logger, teacher, matching_layers, config=None):
+def search_func_setn_v3(xloader, network, criterion, scheduler, w_optimizer, a_optimizer, epoch_str, print_freq, logger, teacher, matching_layers, config=None, kd_coef=0.):
   data_time, batch_time = AverageMeter(), AverageMeter()
   base_losses, arch_losses = AverageMeter(), AverageMeter()
   base_top1, base_top5 = AverageMeter(), AverageMeter()
@@ -260,7 +260,7 @@ def search_func_setn_v3(xloader, network, criterion, scheduler, w_optimizer, a_o
   return base_losses.avg, base_top1.avg, base_top5.avg, arch_losses.avg, arch_top1.avg, arch_top5.avg
 
 
-def search_func_setn_v4(xloader, network, criterion, scheduler, w_optimizer, a_optimizer, epoch_str, print_freq, logger, teacher, matching_layers, config=None):
+def search_func_setn_v4(xloader, network, criterion, scheduler, w_optimizer, a_optimizer, epoch_str, print_freq, logger, teacher, matching_layers, config=None, kd_coef=0.):
   data_time, batch_time = AverageMeter(), AverageMeter()
   base_losses, arch_losses = AverageMeter(), AverageMeter()
   base_top1, base_top5 = AverageMeter(), AverageMeter()
@@ -381,7 +381,7 @@ def search_func_gdas(xloader, network, criterion, scheduler, w_optimizer, a_opti
   return base_losses.avg, base_top1.avg, base_top5.avg, arch_losses.avg, arch_top1.avg, arch_top5.avg
 
 
-def search_func_gdas_v1(xloader, network, criterion, scheduler, w_optimizer, a_optimizer, epoch_str, print_freq, logger, teacher, matching_layers, config=None):
+def search_func_gdas_v1(xloader, network, criterion, scheduler, w_optimizer, a_optimizer, epoch_str, print_freq, logger, teacher, matching_layers, config=None, kd_coef=0.):
   data_time, batch_time = AverageMeter(), AverageMeter()
   base_losses, arch_losses = AverageMeter(), AverageMeter()
   if teacher is None:
@@ -459,7 +459,7 @@ def search_func_gdas_v1(xloader, network, criterion, scheduler, w_optimizer, a_o
       return base_losses.avg, arch_losses.avg
 
 
-def search_func_gdas_v2(xloader, network, criterion, scheduler, w_optimizer, a_optimizer, epoch_str, print_freq, logger, teacher, matching_layers, config=None):
+def search_func_gdas_v2(xloader, network, criterion, scheduler, w_optimizer, a_optimizer, epoch_str, print_freq, logger, teacher, matching_layers, config=None, kd_coef=0.):
   data_time, batch_time = AverageMeter(), AverageMeter()
   base_losses, arch_losses = AverageMeter(), AverageMeter()
   base_top1, base_top5 = AverageMeter(), AverageMeter()
@@ -523,7 +523,7 @@ def search_func_gdas_v2(xloader, network, criterion, scheduler, w_optimizer, a_o
   return base_losses.avg, base_top1.avg, base_top5.avg, arch_losses.avg, arch_top1.avg, arch_top5.avg
 
 
-def search_func_gdas_v3(xloader, network, criterion, scheduler, w_optimizer, a_optimizer, epoch_str, print_freq, logger, teacher, matching_layers, config=None):
+def search_func_gdas_v3(xloader, network, criterion, scheduler, w_optimizer, a_optimizer, epoch_str, print_freq, logger, teacher, matching_layers, config=None, kd_coef=0.):
   data_time, batch_time = AverageMeter(), AverageMeter()
   base_losses, arch_losses = AverageMeter(), AverageMeter()
   base_top1, base_top5 = AverageMeter(), AverageMeter()
@@ -597,7 +597,7 @@ def search_func_gdas_v3(xloader, network, criterion, scheduler, w_optimizer, a_o
   return base_losses.avg, base_top1.avg, base_top5.avg, arch_losses.avg, arch_top1.avg, arch_top5.avg
 
 
-def search_func_gdas_v4(xloader, network, criterion, scheduler, w_optimizer, a_optimizer, epoch_str, print_freq, logger, teacher, matching_layers, config=None):
+def search_func_gdas_v4(xloader, network, criterion, scheduler, w_optimizer, a_optimizer, epoch_str, print_freq, logger, teacher, matching_layers, config=None, kd_coef=0.):
   data_time, batch_time = AverageMeter(), AverageMeter()
   base_losses, arch_losses = AverageMeter(), AverageMeter()
   base_top1, base_top5 = AverageMeter(), AverageMeter()
