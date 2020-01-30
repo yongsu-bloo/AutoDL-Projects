@@ -16,6 +16,7 @@ GDAS
     version 4: training w with matching_loss T=2 times -> training w with ori_loss -> training a with (matching_loss + ori_loss)
 """
 import os, sys, time, torch
+import torch.nn.functional as F
 from log_utils import AverageMeter, time_string
 from utils     import obtain_accuracy
 
