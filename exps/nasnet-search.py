@@ -13,7 +13,8 @@ lib_dir = (Path(__file__).parent / '..' / 'lib').resolve()
 if str(lib_dir) not in sys.path: sys.path.insert(0, str(lib_dir))
 from config_utils import load_config, dict2config, configure2str
 from datasets     import get_datasets, get_nas_search_loaders
-from procedures   import prepare_seed, prepare_logger, save_checkpoint, copy_checkpoint, get_optim_scheduler, get_search_methods
+from procedures   import prepare_seed, prepare_logger, save_checkpoint, copy_checkpoint, get_optim_scheduler
+from procedures.transfer import get_search_methods
 from utils        import get_model_infos, obtain_accuracy
 from log_utils    import AverageMeter, time_string, convert_secs2time, write_results
 from models       import get_cell_based_tiny_net, get_search_spaces, load_net_from_checkpoint, CellStructure as Structure

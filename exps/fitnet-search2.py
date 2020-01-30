@@ -20,6 +20,9 @@ from log_utils    import AverageMeter, time_string, convert_secs2time, write_res
 from models       import get_cell_based_tiny_net, get_search_spaces, load_net_from_checkpoint, FeatureMatching, CellStructure as Structure
 from nas_201_api  import NASBench201API as API
 
+def get_lr(optimizer):
+    for param_group in optimizer.param_groups:
+        return param_group['lr']
 
 def get_best_arch(xloader, network, n_samples):
   # setn evaluation
@@ -134,9 +137,10 @@ def main(args):
     valid_losses, valid_acc1s, valid_acc5s = {}, {'best': -1}, {}
 
   # start training
-  search_func, valid_func = get_search_methods(args.nas_name, args.version)
-  start_time, search_time, epoch_time, total_epoch = time.time(), AverageMeter(), AverageMeter(), config.epochs + config.warmup
-  valid_time = AverageMeter()
+  assert args.version >= 20, "fitnet-search2.py is for version >= 20. fitnet-search.py is fot version {:}".format(args.version)
+  (search_w_func, search_a_func), valid_func = get_search_methods(args.nas_name, args.version)
+  # search w training
+  start_time, search_w_time, epoch_time, total_epoch = time.time(), AverageMeter(), AverageMeter(), config.epochs + config.warmup
   for epoch in range(start_epoch, total_epoch):
       w_scheduler.update(epoch, 0.0)
       need_time = 'Time Left: {:}'.format( convert_secs2time(epoch_time.val * (total_epoch-epoch), True) )
@@ -150,11 +154,33 @@ def main(args):
           kd_coef = 1. - 0.75*(epoch / total_epoch)
       else:
           kd_coef = 0.
-      search_w_loss, search_w_top1, search_w_top5, search_a_loss, search_a_top1, search_a_top5 \
-            = search_func(search_loader, network, criterion, w_scheduler, w_optimizer, a_optimizer, epoch_str, args.print_freq, logger, \
+      search_w_loss, search_w_top1, search_w_top5 \
+            = search_w_func(search_loader, network, criterion, w_scheduler, w_optimizer, epoch_str, args.print_freq, logger, \
                             teacher, matching_layers, config, kd_coef)
-      search_time.update(time.time() - start_time)
-      logger.log('[{:}] search [base] : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%, time-cost={:.1f} s'.format(epoch_str, search_w_loss, search_w_top1, search_w_top5, search_time.sum))
+      search_w_time.update(time.time() - start_time)
+      logger.log('[{:}] search [base] : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%, time-cost={:.1f} s'.format(epoch_str, search_w_loss, search_w_top1, search_w_top5, search_w_time.sum))
+      # measure elapsed time
+      epoch_time.update(time.time() - start_time)
+      start_time = time.time()
+  # search a training
+  valid_time = AverageMeter()
+  start_time, search_a_time, epoch_time, total_epoch = time.time(), AverageMeter(), AverageMeter(), config.epochs + config.warmup
+  for epoch in range(start_epoch, total_epoch):
+      need_time = 'Time Left: {:}'.format( convert_secs2time(epoch_time.val * (total_epoch-epoch), True) )
+      epoch_str = '{:03d}-{:03d}'.format(epoch, total_epoch)
+      if args.nas_name == "GDAS":
+          search_model.set_tau( args.tau_max - (args.tau_max-args.tau_min) * epoch / (total_epoch-1) )
+      logger.log('\n[Search the {:}-th epoch] {:}, LR={:}'.format(epoch_str, need_time, min(w_scheduler.get_lr())))
+      if args.procedure == "Simple-KD":
+          kd_coef = 1.
+      elif args.procedure == "Moving-KD":
+          kd_coef = 1. - 0.75*(epoch / total_epoch)
+      else:
+          kd_coef = 0.
+      search_a_loss, search_a_top1, search_a_top5 \
+            = search_a_func(search_loader, network, criterion, a_optimizer, epoch_str, args.print_freq, logger, \
+                            teacher, matching_layers, config, kd_coef)
+      search_a_time.update(time.time() - start_time)
       logger.log('[{:}] search [arch] : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%'.format(epoch_str, search_a_loss, search_a_top1, search_a_top5))
       # validation
       valid_start_time = time.time()
@@ -213,11 +239,11 @@ def main(args):
 
   logger.log('\n' + '-'*100)
   # check the performance from the architecture dataset
-  logger.log('{:} : run {:} epochs, cost {:.1f} s, last-geno is {:}.'.format(args.nas_name, total_epoch, search_time.sum, genotypes[total_epoch-1]))
+  logger.log('{:} : run {:} epochs, cost w-{:.1f} + a-{:.1f} s, last-geno is {:}.'.format(args.nas_name, total_epoch, search_w_time.sum, search_a_time.sum, genotypes[total_epoch-1]))
   if api is not None: logger.log('{:}'.format( api.query_by_arch(genotypes[total_epoch-1]) ))
   logger.log('The best-geno is {:} with Valid Acc {:}.'.format(genotypes['best'], valid_acc1s['best']))
   if api is not None: logger.log('{:}'.format( api.query_by_arch(genotypes['best']) ))
-  logger.log("[Time cost] total: {:}, search: {:}, valid: {:}".format(convert_secs2time(time.time() - total_time, True), convert_secs2time(search_time.sum, True), convert_secs2time(valid_time.sum, True)))
+  logger.log("[Time cost] total: {:}, search w: {:}, search a: {:}, valid: {:}".format(convert_secs2time(time.time() - total_time, True), convert_secs2time(search_w_time.sum, True), convert_secs2time(search_a_time.sum, True), convert_secs2time(valid_time.sum, True)))
   logger.close()
 
 
