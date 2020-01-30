@@ -158,7 +158,7 @@ def search_func_setn_v2(xloader, network, criterion, scheduler, w_optimizer, a_o
     matching_loss = matching_layers(t_outs, st_outs)
     arch_loss1 = torch.mean(matching_loss)
     if config is not None and hasattr(config, 'KD_alpha') and hasattr(config, 'KD_temperature'):
-        arch_loss2 = loss_KD_fn(criterion, logits, t_logits, arch_targets, alpha, temperature, kd_coef)
+        arch_loss2 = loss_KD_fn(criterion, logits, t_logits, arch_targets, config.KD_alpha, config.KD_temperature, kd_coef)
     else:
         arch_loss2 = criterion(logits, arch_targets)
     arch_loss = arch_loss1 + arch_loss2
