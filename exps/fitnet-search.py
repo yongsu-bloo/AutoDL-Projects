@@ -56,7 +56,10 @@ def main(args):
   total_time = time.time()
 
   train_data, valid_data, xshape, class_num = get_datasets(args.dataset, args.data_path, args.cutout_length)
-  config = load_config(args.config_path, {'class_num': class_num, 'xshape': xshape}, logger)
+  if "KD" in args.procedure:
+      config = load_config(args.config_path, {'class_num': class_num, 'xshape': xshape, 'KD_alpha': args.KD_alpha, 'KD_temperature': args.KD_temperature}, logger)
+  else:
+      config = load_config(args.config_path, {'class_num': class_num, 'xshape': xshape}, logger)
   search_loader, _, valid_loader = get_nas_search_loaders(train_data, valid_data, args.dataset, 'configs/nas-benchmark/', \
                                         config.batch_size if not hasattr(config, "test_batch_size") else (config.batch_size, config.test_batch_size), args.workers)
   logger.log('||||||| {:10s} ||||||| Search-Loader-Num={:}, Valid-Loader-Num={:}, batch size={:}'.format(args.dataset, len(search_loader), len(valid_loader), config.batch_size))
@@ -144,7 +147,8 @@ def main(args):
       logger.log('\n[Search the {:}-th epoch] {:}, LR={:}'.format(epoch_str, need_time, min(w_scheduler.get_lr())))
 
       search_w_loss, search_w_top1, search_w_top5, search_a_loss, search_a_top1, search_a_top5 \
-            = search_func(search_loader, network, criterion, w_scheduler, w_optimizer, a_optimizer, epoch_str, args.print_freq, logger, teacher, matching_layers)
+            = search_func(search_loader, network, criterion, w_scheduler, w_optimizer, a_optimizer, epoch_str, args.print_freq, logger, \
+                            teacher, matching_layers, config)
       search_time.update(time.time() - start_time)
       logger.log('[{:}] search [base] : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%, time-cost={:.1f} s'.format(epoch_str, search_w_loss, search_w_top1, search_w_top5, search_time.sum))
       logger.log('[{:}] search [arch] : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%'.format(epoch_str, search_a_loss, search_a_top1, search_a_top5))
@@ -225,6 +229,10 @@ if __name__ == '__main__':
   parser.add_argument('--beta',               type=float, default=0.5, help='matching loss scale')
   parser.add_argument("--fixed_genotype",     type=str,   help="Part cell search architecture")
   parser.add_argument("--pos",                type=int,   help="Part cell search stage: [0,1,2]")
+  # Training Options
+  parser.add_argument('--procedure'   ,       type=str,   default='basic',       help='The procedure basic prefix.')
+  parser.add_argument('--KD_alpha'    ,       type=float, default=0.9,           help='The alpha parameter in knowledge distillation.')
+  parser.add_argument('--KD_temperature',     type=float, default=4,           help='The temperature parameter in knowledge distillation.')
   # data
   parser.add_argument('--data_path',          type=str,   default=os.environ['TORCH_HOME'] + "/cifar.python", help='Path to dataset')
   parser.add_argument('--dataset',            type=str,   default='cifar100', choices=['cifar10', 'cifar100', 'ImageNet16-120'], help='Choose between Cifar10/100 and ImageNet-16.')
@@ -255,4 +263,6 @@ if __name__ == '__main__':
   if args.rand_seed is None or args.rand_seed < 0: args.rand_seed = random.randint(1, 100000)
   if args.exp_name != "":
       args.save_dir = "./output/{}-n{}/transfer-search-v{}/{}".format(args.dataset, args.num_cells, args.version, args.exp_name)
+  if "KD" in args.procedure:
+      args.save_dir += "-kd"
   main(args)

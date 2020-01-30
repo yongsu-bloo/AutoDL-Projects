@@ -11,7 +11,7 @@ from utils     import obtain_accuracy
 def fitnet_train(xloader, teacher, network, matching_layers, criterion, scheduler, optimizer, optim_config, extra_info, print_freq, logger, kd_coef=0., version=1):
     return procedure(xloader, teacher, network, matching_layers, criterion, scheduler, optimizer, 'train', optim_config, extra_info, print_freq, logger, \
                                  kd_coef, version)
-    return
+
 def fitnet_valid(xloader, teacher, network, matching_layers, criterion, optim_config, extra_info, print_freq, logger, kd_coef=0., version=1):
   with torch.no_grad():
     return procedure(xloader, teacher, network, matching_layers, criterion, None, None, 'valid', optim_config, extra_info, print_freq, logger, \
