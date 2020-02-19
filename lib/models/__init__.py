@@ -44,8 +44,8 @@ def get_cell_based_tiny_net(config):
         genotype = config.genotype
     elif hasattr(config, 'arch_str'):
         genotype = CellStructure.str2structure(config.arch_str)
-        else: raise ValueError('Can not find genotype from this config : {:}'.format(config))
-        return TinyNetwork(config.C, config.N, genotype, config.num_classes)
+    else: raise ValueError('Can not find genotype from this config : {:}'.format(config))
+    return TinyNetwork(config.C, config.N, genotype, config.num_classes)
   elif config.name == 'infer-macro-nas':
     from .cell_infers import MacroTinyNetwork
     return MacroTinyNetwork(config.C, config.N, config.genotype, config.num_classes, config.fixed_genotype, config.pos)
