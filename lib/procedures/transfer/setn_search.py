@@ -13,7 +13,10 @@ from utils     import obtain_accuracy
 
 def loss_KD_fn(criterion, student_logits, teacher_logits, targets, alpha=0.9, temperature=4, kd_coef=0.):
   # KD training
-  basic_loss = criterion(student_logits, targets) * (1. - alpha)
+  if criterion:
+      basic_loss = criterion(student_logits, targets) * (1. - alpha)
+  else:
+      basic_loss = 0.
   if kd_coef != 0.:
       log_student= F.log_softmax(student_logits / temperature, dim=1)
       sof_teacher= F.softmax    (teacher_logits / temperature, dim=1)
@@ -38,7 +41,6 @@ def search_func_setn(xloader, network, criterion, scheduler, w_optimizer, a_opti
     arch_targets = arch_targets.cuda(non_blocking=True)
     # measure data loading time
     data_time.update(time.time() - end)
-
     # update the weights
     sampled_arch = network.module.dync_genotype(True) # uniform sampling
     network.module.set_cal_mode('dynamic', sampled_arch)
@@ -46,7 +48,6 @@ def search_func_setn(xloader, network, criterion, scheduler, w_optimizer, a_opti
     if teacher:
         matching_layers.train()
         matching_layers.zero_grad()
-
     _, logits, st_outs = network(base_inputs, out_all=True)
     if teacher:
         with torch.no_grad():
