@@ -137,7 +137,7 @@ def main(args):
     valid_losses, valid_acc1s, valid_acc5s = {}, {'best': -1}, {}
 
   # start training
-  assert args.version >= 20, "fitnet-search2.py is for version >= 20. fitnet-search.py is fot version {:}".format(args.version)
+  # assert args.version >= 20, "fitnet-search2.py is for version >= 20. fitnet-search.py is fot version {:}".format(args.version)
   (search_w_func, search_a_func), valid_func = get_search_methods(args.nas_name, args.version)
   # search w training
   start_time, search_w_time, epoch_time, total_epoch = time.time(), AverageMeter(), AverageMeter(), config.epochs + config.warmup

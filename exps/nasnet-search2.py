@@ -17,9 +17,12 @@ from procedures   import prepare_seed, prepare_logger, save_checkpoint, copy_che
 from procedures.transfer import get_search_methods
 from utils        import get_model_infos, obtain_accuracy
 from log_utils    import AverageMeter, time_string, convert_secs2time, write_results
-from models       import get_cell_based_tiny_net, get_search_spaces, load_net_from_checkpoint, CellStructure as Structure
+from models       import get_cell_based_tiny_net, get_search_spaces, load_net_from_checkpoint, FeatureMatching, CellStructure as Structure
 from nas_201_api  import NASBench201API as API
 
+def get_lr(optimizer):
+    for param_group in optimizer.param_groups:
+        return param_group['lr']
 
 def get_best_arch(xloader, network, n_samples):
   # setn evaluation
@@ -99,7 +102,7 @@ def main(args):
 
   network, criterion = torch.nn.DataParallel(search_model).cuda(), criterion.cuda()
 
-  if last_info.exists() and not xarg.overwrite: # automatically resume from previous checkpoint
+  if last_info.exists() and not args.overwrite: # automatically resume from previous checkpoint
     logger.log("=> loading checkpoint of the last-info '{:}' start".format(last_info))
     last_info   = torch.load(last_info)
     start_epoch = last_info['epoch']
@@ -112,6 +115,7 @@ def main(args):
     w_optimizer.load_state_dict ( checkpoint['w_optimizer'] )
     w_scheduler.load_state_dict ( checkpoint['w_scheduler'] )
     a_optimizer.load_state_dict ( checkpoint['a_optimizer'] )
+    matching_layers.load_state_dict( checkpoint['matching_layers'] )
     logger.log("=> loading checkpoint of the last-info '{:}' start with {:}-th epoch.".format(last_info, start_epoch))
   else:
     logger.log("=> do not find the last-info file : {:}".format(last_info))
@@ -120,9 +124,9 @@ def main(args):
     valid_losses, valid_acc1s, valid_acc5s = {}, {'best': -1}, {}
 
   # start training
-  search_func, valid_func = get_search_methods(args.nas_name)
-  start_time, search_time, epoch_time, total_epoch = time.time(), AverageMeter(), AverageMeter(), config.epochs + config.warmup
-  valid_time = AverageMeter()
+  (search_w_func, search_a_func), valid_func = get_search_methods(args.nas_name, 20)
+  # search w training
+  start_time, search_w_time, epoch_time, total_epoch = time.time(), AverageMeter(), AverageMeter(), config.epochs + config.warmup
   for epoch in range(start_epoch, total_epoch):
       w_scheduler.update(epoch, 0.0)
       need_time = 'Time Left: {:}'.format( convert_secs2time(epoch_time.val * (total_epoch-epoch), True) )
@@ -131,10 +135,25 @@ def main(args):
           search_model.set_tau( args.tau_max - (args.tau_max-args.tau_min) * epoch / (total_epoch-1) )
       logger.log('\n[Search the {:}-th epoch] {:}, LR={:}'.format(epoch_str, need_time, min(w_scheduler.get_lr())))
 
-      search_w_loss, search_w_top1, search_w_top5, search_a_loss, search_a_top1, search_a_top5 \
-            = search_func(search_loader, network, criterion, w_scheduler, w_optimizer, a_optimizer, epoch_str, args.print_freq, logger)
-      search_time.update(time.time() - start_time)
-      logger.log('[{:}] search [base] : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%, time-cost={:.1f} s'.format(epoch_str, search_w_loss, search_w_top1, search_w_top5, search_time.sum))
+      search_w_loss, search_w_top1, search_w_top5 \
+            = search_w_func(search_loader, network, criterion, w_scheduler, w_optimizer, epoch_str, args.print_freq, logger)
+      search_w_time.update(time.time() - start_time)
+      logger.log('[{:}] search [base] : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%, time-cost={:.1f} s'.format(epoch_str, search_w_loss, search_w_top1, search_w_top5, search_w_time.sum))
+      # measure elapsed time
+      epoch_time.update(time.time() - start_time)
+      start_time = time.time()
+  # search a training
+  valid_time = AverageMeter()
+  start_time, search_a_time, epoch_time, total_epoch = time.time(), AverageMeter(), AverageMeter(), config.epochs + config.warmup
+  for epoch in range(start_epoch, total_epoch):
+      need_time = 'Time Left: {:}'.format( convert_secs2time(epoch_time.val * (total_epoch-epoch), True) )
+      epoch_str = '{:03d}-{:03d}'.format(epoch, total_epoch)
+      if args.nas_name == "GDAS":
+          search_model.set_tau( args.tau_max - (args.tau_max-args.tau_min) * epoch / (total_epoch-1) )
+      logger.log('\n[Search the {:}-th epoch] {:}, LR={:}'.format(epoch_str, need_time, min(w_scheduler.get_lr())))
+      search_a_loss, search_a_top1, search_a_top5 \
+            = search_a_func(search_loader, network, criterion, a_optimizer, epoch_str, args.print_freq, logger)
+      search_a_time.update(time.time() - start_time)
       logger.log('[{:}] search [arch] : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%'.format(epoch_str, search_a_loss, search_a_top1, search_a_top5))
       # validation
       valid_start_time = time.time()
@@ -186,24 +205,24 @@ def main(args):
           copy_checkpoint(model_base_path, model_best_path, logger)
       with torch.no_grad():
           logger.log('arch-parameters :\n{:}'.format( nn.functional.softmax(search_model.arch_parameters, dim=-1).cpu() ))
-      if api is not None: logger.log('{:}'.format(api.query_by_arch( genotypes[epoch] )))
+      if api is not None: logger.log('{:}'.format(api.query_by_arch( genotype )))
       # measure elapsed time
       epoch_time.update(time.time() - start_time)
       start_time = time.time()
 
   logger.log('\n' + '-'*100)
   # check the performance from the architecture dataset
-  logger.log('{:} : run {:} epochs, cost {:.1f} s, last-geno is {:}.'.format(args.nas_name, total_epoch, search_time.sum, genotypes[total_epoch-1]))
+  logger.log('{:} : run {:} epochs, cost w-{:.1f} + a-{:.1f} s, last-geno is {:}.'.format(args.nas_name, total_epoch, search_w_time.sum, search_a_time.sum, genotypes[total_epoch-1]))
   if api is not None: logger.log('{:}'.format( api.query_by_arch(genotypes[total_epoch-1]) ))
   logger.log('The best-geno is {:} with Valid Acc {:}.'.format(genotypes['best'], valid_acc1s['best']))
   if api is not None: logger.log('{:}'.format( api.query_by_arch(genotypes['best']) ))
-  logger.log("[Time cost] total: {:}, search: {:}, valid: {:}".format(convert_secs2time(time.time() - total_time, True), convert_secs2time(search_time.sum, True), convert_secs2time(valid_time.sum, True)))
+  logger.log("[Time cost] total: {:}, search w: {:}, search a: {:}, valid: {:}".format(convert_secs2time(time.time() - total_time, True), convert_secs2time(search_w_time.sum, True), convert_secs2time(search_a_time.sum, True), convert_secs2time(valid_time.sum, True)))
   logger.close()
 
 
 
 if __name__ == '__main__':
-  parser = argparse.ArgumentParser("Part Re-Search")
+  parser = argparse.ArgumentParser("Part Re-Search2")
   parser.add_argument('--exp_name',           type=str,  default="",     help='Experiment name')
   parser.add_argument('--overwrite',          type=bool, default=False,  help='Overwrite the existing results')
   parser.add_argument("--nas_name",           type=str,  default="GDAS", help="NAS algorithm to use")
@@ -231,12 +250,12 @@ if __name__ == '__main__':
   parser.add_argument("--select_num",         type=int,   default=100,  help="The number of architectures to be sampled for evaluation")
   # log
   parser.add_argument('--workers',            type=int,   default=8,    help='number of data loading workers')
-  parser.add_argument('--save_dir',           type=str,   default="./output/nasnet-search",     help='Folder to save checkpoints and log.')
+  parser.add_argument('--save_dir',           type=str,   default="./output/nasnet-search2",     help='Folder to save checkpoints and log.')
   parser.add_argument('--arch_nas_dataset',   type=str,   default=os.environ['TORCH_HOME'] + "/NAS-Bench-201-v1_0-e61699.pth", help='The path to load the architecture dataset (tiny-nas-benchmark).')
   parser.add_argument('--print_freq',         type=int,   default=100, help='print frequency (default: 100)')
   parser.add_argument('--rand_seed',          type=int,   default=-1, help='manual seed')
   args = parser.parse_args()
   if args.rand_seed is None or args.rand_seed < 0: args.rand_seed = random.randint(1, 100000)
   if args.exp_name != "":
-      args.save_dir = "./output/{}-n{}/nasnet-search/{}".format(args.dataset, args.num_cells, args.exp_name)
+      args.save_dir = "./output/{}-n{}/nasnet-search2/{}".format(args.dataset, args.num_cells, args.exp_name)
   main(args)
