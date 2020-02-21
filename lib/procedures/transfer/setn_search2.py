@@ -28,7 +28,7 @@ def search_w_setn2(xloader, network, criterion, scheduler, w_optimizer, epoch_st
       base_top1, base_top5 = AverageMeter(), AverageMeter()
   end = time.time()
   network.train()
-  if teacher is not None:
+  if teacher:
     teacher.eval()
     matching_layers.train()
   for step, (base_inputs, base_targets, _, _) in enumerate(xloader):
@@ -42,11 +42,11 @@ def search_w_setn2(xloader, network, criterion, scheduler, w_optimizer, epoch_st
     network.module.set_cal_mode('dynamic', sampled_arch)
     #network.module.set_cal_mode( 'urs' )
     network.zero_grad()
-    if teacher is not None:
+    if teacher:
         matching_layers.train()
         matching_layers.zero_grad()
     _, logits, st_outs = network(base_inputs, out_all=True)
-    if teacher is not None:
+    if teacher:
         with torch.no_grad():
             _, t_logits, t_outs = teacher(base_inputs, out_all=True)
         matching_loss = matching_layers(t_outs, st_outs)
@@ -75,7 +75,7 @@ def search_w_setn2(xloader, network, criterion, scheduler, w_optimizer, epoch_st
   if teacher is None:
       return base_losses.avg, base_top1.avg, base_top5.avg
   else:
-      return base_losses.avg
+      return base_losses.avg, 0., 0.
 
 def search_a_setn2(xloader, network, criterion, a_optimizer, epoch_str, print_freq, logger, teacher=None, matching_layers=None, config=None, kd_coef=0.):
   data_time, batch_time = AverageMeter(), AverageMeter()
@@ -84,7 +84,7 @@ def search_a_setn2(xloader, network, criterion, a_optimizer, epoch_str, print_fr
       arch_top1, arch_top5 = AverageMeter(), AverageMeter()
   end = time.time()
   network.train()
-  if teacher is not None:
+  if teacher:
     teacher.eval()
     matching_layers.eval()
   # update the architecture-weight
@@ -94,7 +94,7 @@ def search_a_setn2(xloader, network, criterion, a_optimizer, epoch_str, print_fr
     # measure data loading time
     data_time.update(time.time() - end)
     network.zero_grad()
-    if teacher is not None:
+    if teacher:
         matching_layers.eval()
         with torch.no_grad():
             _, t_logits, t_outs = teacher(arch_inputs, True)
@@ -131,7 +131,7 @@ def search_a_setn2(xloader, network, criterion, a_optimizer, epoch_str, print_fr
   if teacher is None:
       return arch_losses.avg, arch_top1.avg, arch_top5.avg
   else:
-      return arch_losses.avg
+      return arch_losses.avg, 0., 0.
 
 def search_w_setn2_v2(xloader, network, criterion, scheduler, w_optimizer, epoch_str, print_freq, logger, teacher=None, matching_layers=None, config=None, kd_coef=0.):
   data_time, batch_time = AverageMeter(), AverageMeter()
