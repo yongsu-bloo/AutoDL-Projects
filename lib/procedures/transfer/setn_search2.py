@@ -43,7 +43,6 @@ def search_w_setn2(xloader, network, criterion, scheduler, w_optimizer, epoch_st
     #network.module.set_cal_mode( 'urs' )
     network.zero_grad()
     if teacher:
-        matching_layers.train()
         matching_layers.zero_grad()
     _, logits, st_outs = network(base_inputs, out_all=True)
     if teacher:
@@ -84,9 +83,12 @@ def search_a_setn2(xloader, network, criterion, a_optimizer, epoch_str, print_fr
       arch_top1, arch_top5 = AverageMeter(), AverageMeter()
   end = time.time()
   network.train()
+  for param in network.module.get_weights():
+    param.requires_grad_(False)
   if teacher:
     teacher.eval()
     matching_layers.eval()
+    matching_layers.requires_grad_(False)
   # update the architecture-weight
   network.module.set_cal_mode( 'joint' )
   for step, (_, _, arch_inputs, arch_targets) in enumerate(xloader):
@@ -95,7 +97,6 @@ def search_a_setn2(xloader, network, criterion, a_optimizer, epoch_str, print_fr
     data_time.update(time.time() - end)
     network.zero_grad()
     if teacher:
-        matching_layers.eval()
         with torch.no_grad():
             _, t_logits, t_outs = teacher(arch_inputs, True)
         _, logits, st_outs = network(arch_inputs, True)
@@ -183,8 +184,11 @@ def search_a_setn2_v2(xloader, network, criterion, a_optimizer, epoch_str, print
   arch_top1, arch_top5 = AverageMeter(), AverageMeter()
   end = time.time()
   network.train()
+  for param in network.module.get_weights():
+    param.requires_grad_(False)
   teacher.eval()
   matching_layers.eval()
+  matching_layers.requires_grad_(False)
   # update the architecture-weight
   network.module.set_cal_mode( 'joint' )
   for step, (_, _, arch_inputs, arch_targets) in enumerate(xloader):

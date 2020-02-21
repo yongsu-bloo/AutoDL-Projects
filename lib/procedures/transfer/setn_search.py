@@ -44,9 +44,11 @@ def search_func_setn(xloader, network, criterion, scheduler, w_optimizer, a_opti
     # update the weights
     sampled_arch = network.module.dync_genotype(True) # uniform sampling
     network.module.set_cal_mode('dynamic', sampled_arch)
+    network.requires_grad_(True)
     network.zero_grad()
     if teacher:
         matching_layers.train()
+        matching_layers.requires_grad_(True)
         matching_layers.zero_grad()
     _, logits, st_outs = network(base_inputs, out_all=True)
     if teacher:
@@ -66,9 +68,12 @@ def search_func_setn(xloader, network, criterion, scheduler, w_optimizer, a_opti
 
     # update the architecture-weight
     network.module.set_cal_mode( 'joint' )
+    for param in network.module.get_weights():
+        param.requires_grad_(False)
     network.zero_grad()
     if teacher:
         matching_layers.eval()
+        matching_layers.requires_grad_(False)
         with torch.no_grad():
             _, t_logits, t_outs = teacher(arch_inputs, True)
         _, logits, st_outs = network(arch_inputs, True)
@@ -100,6 +105,7 @@ def search_func_setn(xloader, network, criterion, scheduler, w_optimizer, a_opti
       #print (network.module.arch_parameters)
   return base_losses.avg, base_top1.avg, base_top5.avg, arch_losses.avg, arch_top1.avg, arch_top5.avg
 
+
 def search_func_setn_v2(xloader, network, criterion, scheduler, w_optimizer, a_optimizer, epoch_str, print_freq, logger, teacher, matching_layers, config=None, kd_coef=0.):
   data_time, batch_time = AverageMeter(), AverageMeter()
   base_losses, arch_losses = AverageMeter(), AverageMeter()
@@ -110,12 +116,13 @@ def search_func_setn_v2(xloader, network, criterion, scheduler, w_optimizer, a_o
   teacher.eval()
   for step, (base_inputs, base_targets, arch_inputs, arch_targets) in enumerate(xloader):
     matching_layers.train()
+    network.requires_grad_(True)
+    matching_layers.requires_grad_(True)
     scheduler.update(None, 1.0 * step / len(xloader))
     base_targets = base_targets.cuda(non_blocking=True)
     arch_targets = arch_targets.cuda(non_blocking=True)
     # measure data loading time
     data_time.update(time.time() - end)
-
     # update the weights
     sampled_arch = network.module.dync_genotype(True) # uniform sampling
     network.module.set_cal_mode('dynamic', sampled_arch)
@@ -137,11 +144,13 @@ def search_func_setn_v2(xloader, network, criterion, scheduler, w_optimizer, a_o
     base_top1.update  (base_prec1.item(), base_inputs.size(0))
     base_top5.update  (base_prec5.item(), base_inputs.size(0))
     base_losses.update(base_loss.item(),  base_inputs.size(0))
-
     # update the architecture-weight
     network.module.set_cal_mode( 'joint' )
+    for param in network.module.get_weights():
+        param.requires_grad_(False)
     network.zero_grad()
     matching_layers.eval()
+    matching_layers.requires_grad_(False)
     with torch.no_grad():
         _, t_logits, t_outs = teacher(arch_inputs, True)
     a_optimizer.zero_grad()
@@ -184,12 +193,13 @@ def search_func_setn_v3(xloader, network, criterion, scheduler, w_optimizer, a_o
   teacher.eval()
   for step, (base_inputs, base_targets, arch_inputs, arch_targets) in enumerate(xloader):
     matching_layers.train()
+    network.requires_grad_(True)
+    matching_layers.requires_grad_(True)
     scheduler.update(None, 1.0 * step / len(xloader))
     base_targets = base_targets.cuda(non_blocking=True)
     arch_targets = arch_targets.cuda(non_blocking=True)
     # measure data loading time
     data_time.update(time.time() - end)
-
     # update the weights
     sampled_arch = network.module.dync_genotype(True) # uniform sampling
     network.module.set_cal_mode('dynamic', sampled_arch)
@@ -213,11 +223,13 @@ def search_func_setn_v3(xloader, network, criterion, scheduler, w_optimizer, a_o
     base_top1.update  (base_prec1.item(), base_inputs.size(0))
     base_top5.update  (base_prec5.item(), base_inputs.size(0))
     base_losses.update(base_loss.item(),  base_inputs.size(0))
-
     # update the architecture-weight
     network.module.set_cal_mode( 'joint' )
+    for param in network.module.get_weights():
+        param.requires_grad_(False)
     network.zero_grad()
     matching_layers.eval()
+    matching_layers.requires_grad_(False)
     with torch.no_grad():
         _, t_logits, t_outs = teacher(arch_inputs, True)
     for _ in range(2):
@@ -264,12 +276,13 @@ def search_func_setn_v4(xloader, network, criterion, scheduler, w_optimizer, a_o
     w_optimizer.zero_grad()
     a_optimizer.zero_grad()
     matching_layers.train()
+    network.requires_grad_(True)
+    matching_layers.requires_grad_(True)
     scheduler.update(None, 1.0 * step / len(xloader))
     base_targets = base_targets.cuda(non_blocking=True)
     arch_targets = arch_targets.cuda(non_blocking=True)
     # measure data loading time
     data_time.update(time.time() - end)
-
     # update the weights
     sampled_arch = network.module.dync_genotype(True) # uniform sampling
     network.module.set_cal_mode('dynamic', sampled_arch)
@@ -292,11 +305,13 @@ def search_func_setn_v4(xloader, network, criterion, scheduler, w_optimizer, a_o
     base_top1.update  (base_prec1.item(), base_inputs.size(0))
     base_top5.update  (base_prec5.item(), base_inputs.size(0))
     base_losses.update(base_loss.item(),  base_inputs.size(0))
-
     # update the architecture-weight
     network.module.set_cal_mode( 'joint' )
+    for param in network.module.get_weights():
+        param.requires_grad_(False)
     network.zero_grad()
     matching_layers.eval()
+    matching_layers.requires_grad_(False)
     with torch.no_grad():
         _, t_logits, t_outs = teacher(arch_inputs, True)
     _, logits, st_outs = network(arch_inputs, True)
