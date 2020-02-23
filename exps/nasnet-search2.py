@@ -140,6 +140,7 @@ def main(args):
             = search_w_func(search_loader, network, criterion, w_scheduler, w_optimizer, epoch_str, args.print_freq, logger)
       search_w_time.update(time.time() - start_time)
       logger.log('[{:}] search [base] : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%, time-cost={:.1f} s'.format(epoch_str, search_w_loss, search_w_top1, search_w_top5, search_w_time.sum))
+      search_losses[epoch] = search_w_loss
       # measure elapsed time
       epoch_time.update(time.time() - start_time)
       start_time = time.time()
@@ -167,7 +168,6 @@ def main(args):
       valid_time.update(time.time() - valid_start_time)
       logger.log('[{:}] evaluate : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%, time-cost={:1f} s'.format(epoch_str, valid_a_loss, valid_a_top1, valid_a_top5, valid_time.sum))
       # check the best accuracy
-      search_losses[epoch] = search_w_loss
       search_arch_losses[epoch] = search_a_loss
       valid_losses[epoch] = valid_a_loss
       valid_acc1s[epoch] = valid_a_top1
