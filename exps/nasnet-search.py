@@ -105,6 +105,7 @@ def main(args):
     start_epoch = last_info['epoch']
     checkpoint  = torch.load(last_info['last_checkpoint'])
     genotypes   = checkpoint['genotypes']
+    arch_params = checkpoint['arch_params']
     search_losses = checkpoint['search_losses']
     valid_losses = checkpoint['valid_losses']
     search_arch_losses = checkpoint['search_arch_losses']
@@ -118,7 +119,7 @@ def main(args):
     start_epoch, genotypes = 0, {-1: search_model.genotype()}
     search_losses, search_arch_losses = {}, {}
     valid_losses, valid_acc1s, valid_acc5s = {}, {'best': -1}, {}
-
+    arch_params = {}
   # start training
   search_func, valid_func = get_search_methods(args.nas_name)
   start_time, search_time, epoch_time, total_epoch = time.time(), AverageMeter(), AverageMeter(), config.epochs + config.warmup
@@ -153,10 +154,14 @@ def main(args):
       valid_acc1s[epoch] = valid_a_top1
       valid_acc5s[epoch] = valid_a_top5
       genotypes[epoch] = genotype
+      with torch.no_grad():
+          arch_param = nn.functional.softmax(search_model.arch_parameters, dim=-1).cpu().numpy()
+      arch_params[epoch] = arch_param
       logger.log('<<<--->>> The {:}-th epoch : {:}'.format(epoch_str, genotypes[epoch]))
       if valid_a_top1 > valid_acc1s['best']:
           valid_acc1s['best'] = valid_a_top1
           genotypes['best']   = genotypes[epoch]
+          arch_params['best'] = arch_param
           find_best = True
       else: find_best = False
       # save checkpoint
@@ -167,6 +172,7 @@ def main(args):
                   'a_optimizer' : a_optimizer.state_dict(),
                   'w_scheduler' : w_scheduler.state_dict(),
                   'genotypes'   : deepcopy(genotypes),
+                  'arch_params' : arch_params,
                   'fixed_genotype' : args.fixed_genotype,
                   "search_position" : args.pos,
                   "search_losses" : deepcopy(search_losses),
@@ -184,8 +190,7 @@ def main(args):
       if find_best:
           logger.log('<<<--->>> The {:}-th epoch : find the highest validation accuracy : {:.2f}%.'.format(epoch_str, valid_a_top1))
           copy_checkpoint(model_base_path, model_best_path, logger)
-      with torch.no_grad():
-          logger.log('arch-parameters :\n{:}'.format( nn.functional.softmax(search_model.arch_parameters, dim=-1).cpu() ))
+      logger.log('arch-parameters :\n{:}'.format( arch_param ))
       if api is not None: logger.log('{:}'.format(api.query_by_arch( genotypes[epoch] )))
       # measure elapsed time
       epoch_time.update(time.time() - start_time)
