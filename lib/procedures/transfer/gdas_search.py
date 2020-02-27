@@ -147,7 +147,7 @@ def search_func_gdas_v1(xloader, network, criterion, scheduler, w_optimizer, a_o
   if teacher is None:
       return base_losses.avg, base_top1.avg, base_top5.avg, arch_losses.avg, arch_top1.avg, arch_top5.avg
   else:
-      return base_losses.avg, arch_losses.avg
+      return base_losses.avg, 0., 0., arch_losses.avg, 0., 0.
 
 
 def search_func_gdas_v2(xloader, network, criterion, scheduler, w_optimizer, a_optimizer, epoch_str, print_freq, logger, teacher, matching_layers, config=None, kd_coef=0.):
