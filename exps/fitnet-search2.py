@@ -203,10 +203,10 @@ def main(args):
       with torch.no_grad():
           arch_param = nn.functional.softmax(search_model.arch_parameters, dim=-1).cpu().numpy()
       arch_params[epoch] = arch_param
-      logger.log('<<<--->>> The {:}-th epoch : {:}'.format(epoch_str, genotypes[epoch]))
+      logger.log('<<<--->>> The {:}-th epoch : {:}'.format(epoch_str, genotype))
       if valid_a_top1 > valid_acc1s['best']:
           valid_acc1s['best'] = valid_a_top1
-          genotypes['best']   = genotypes[epoch]
+          genotypes['best']   = genotype
           arch_params['best'] = arch_param
           find_best = True
       else: find_best = False
@@ -278,7 +278,7 @@ if __name__ == '__main__':
   parser.add_argument('--channel',            type=int,   default=16, help='The number of channels.')
   parser.add_argument('--num_cells',          type=int,   default=2, help='The number of cells in one stage.')
   parser.add_argument('--track_running_stats',type=int,   default=0, choices=[0,1],help='Whether use track_running_stats or not in the BN layer.')
-  parser.add_argument('--config_path',        type=str,   default="configs/nas-benchmark/transfer-N2.config", help='The path of the configuration.')
+  parser.add_argument('--config_path',        type=str,   default="configs/research/transfer-N2.config", help='The path of the configuration.')
   parser.add_argument('--model_config',       type=str,   help='The path of the model configuration. When this arg is set, it will cover max_nodes / channels / num_cells.')
   # architecture leraning rate
   parser.add_argument('--arch_learning_rate', type=float, default=3e-4, help='learning rate for arch encoding')

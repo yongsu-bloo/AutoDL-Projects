@@ -268,7 +268,7 @@ if __name__ == '__main__':
   parser.add_argument('--print_freq_eval',  type=int,   default=100,    help='print frequency (default: 100)')
   # Configs and Checkpoints
   parser.add_argument('--model_config',        type=str,    help='The path to the model configuration')
-  parser.add_argument('--optim_config',        type=str,    default="./configs/opts/CIFAR-fitnet-nas102.config",      help='The path to the optimizer configuration')
+  parser.add_argument('--optim_config',        type=str,    default="./configs/research/CIFAR-fitnet-nas102.config",      help='The path to the optimizer configuration')
   parser.add_argument('--model_checkpoint',    type=str,    help='The model checkpoint.')
   parser.add_argument('--arch_str',            type=str,   help="specific architecture to be trained")
   parser.add_argument('--fixed_genotype',      type=str,   help="architecture to be trained")

@@ -135,7 +135,6 @@ def main(args):
       if args.nas_name == "GDAS":
           search_model.set_tau( args.tau_max - (args.tau_max-args.tau_min) * epoch / (total_epoch-1) )
       logger.log('\n[Search the {:}-th epoch] {:}, LR={:}'.format(epoch_str, need_time, min(w_scheduler.get_lr())))
-
       search_w_loss, search_w_top1, search_w_top5 \
             = search_w_func(search_loader, network, criterion, w_scheduler, w_optimizer, epoch_str, args.print_freq, logger)
       search_w_time.update(time.time() - start_time)
@@ -146,7 +145,7 @@ def main(args):
       start_time = time.time()
   # search a training
   valid_time = AverageMeter()
-  start_time, search_a_time, epoch_time, total_epoch = time.time(), AverageMeter(), AverageMeter(), config.epochs + config.warmup
+  start_time, search_a_time, epoch_time, total_epoch = time.time(), AverageMeter(), AverageMeter(), 250 + config.warmup #config.epochs + config.warmup
   for epoch in range(start_epoch, total_epoch):
       need_time = 'Time Left: {:}'.format( convert_secs2time(epoch_time.val * (total_epoch-epoch), True) )
       epoch_str = '{:03d}-{:03d}'.format(epoch, total_epoch)
@@ -243,7 +242,7 @@ if __name__ == '__main__':
   parser.add_argument('--channel',            type=int,   default=16, help='The number of channels.')
   parser.add_argument('--num_cells',          type=int,   default=2, help='The number of cells in one stage.')
   parser.add_argument('--track_running_stats',type=int,   default=0, choices=[0,1],help='Whether use track_running_stats or not in the BN layer.')
-  parser.add_argument('--config_path',        type=str,   default="configs/nas-benchmark/N2.config", help='The path of the configuration.')
+  parser.add_argument('--config_path',        type=str,   default="configs/research/nasnet-search-E250.config", help='The path of the configuration.')
   parser.add_argument('--model_config',       type=str,   help='The path of the model configuration. When this arg is set, it will cover max_nodes / channels / num_cells.')
   # architecture leraning rate
   parser.add_argument('--arch_learning_rate', type=float, default=3e-4, help='learning rate for arch encoding')

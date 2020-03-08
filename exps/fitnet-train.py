@@ -290,7 +290,7 @@ if __name__ == '__main__':
   parser.add_argument('--print_freq_eval',  type=int,   default=100,    help='print frequency (default: 100)')
   # Configs and Checkpoints
   parser.add_argument('--student_config',        type=str,    help='The path to the student model configuration')
-  parser.add_argument('--optim_config',          type=str,    default="./configs/opts/CIFAR-fitnet-nas102-hint.config",      help='The path to the optimizer configuration')
+  parser.add_argument('--optim_config',          type=str,    default="./configs/research/CIFAR-fitnet-nas102-hint.config",      help='The path to the optimizer configuration')
   parser.add_argument('--student_checkpoint',    type=str,    help='The student checkpoint.')
   parser.add_argument('--teacher_checkpoint',    type=str,    default="./.latent-data/basemodels/cifar100/ResNet110.pth",    help='The teacher checkpoint in knowledge distillation.')
   parser.add_argument('--arch_str',           type=str,   default=None, help="specific architecture to be transfer trained")
