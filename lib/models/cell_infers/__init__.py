@@ -3,3 +3,4 @@
 #####################################################
 from .tiny_network import TinyNetwork
 from .macro_tiny_network import MacroTinyNetwork
+from .nasnet_cifar import NASNetonCIFAR
