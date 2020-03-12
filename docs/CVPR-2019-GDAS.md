@@ -39,7 +39,7 @@ If you are interested in the configs of each NAS-searched architecture, they are
 ### Searching on the NASNet search space
 Please use the following scripts to use GDAS to search as in the original paper:
 ```
-CUDA_VISIBLE_DEVICES=0 bash ./scripts-search/GDAS-search-NASNet-space.sh cifar10 1 -1
+CUDA_VISIBLE_DEVICES=0 bash ./scripts-search/NASNet-space-search-by-GDAS.sh cifar10 1 -1
 ```
 
 **After searching**, if you want to re-train the searched architecture found by the above script, you can use the following script:

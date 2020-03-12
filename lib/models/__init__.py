@@ -50,6 +50,13 @@ def get_cell_based_tiny_net(config):
   elif config.name == 'infer-macro-nas':
     from .cell_infers import MacroTinyNetwork
     return MacroTinyNetwork(config.C, config.N, config.genotype, config.num_classes, config.fixed_genotype, config.pos)
+  elif config.name == 'infer.shape.tiny':
+    from .shape_infers import DynamicShapeTinyNet
+    if isinstance(config.channels, str):
+      channels = tuple([int(x) for x in config.channels.split(':')])
+    else: channels = config.channels
+    genotype = CellStructure.str2structure(config.genotype)
+    return DynamicShapeTinyNet(channels, genotype, config.num_classes)
   elif config.name == 'infer.nasnet-cifar':
     from .cell_infers import NASNetonCIFAR
     raise NotImplementedError
