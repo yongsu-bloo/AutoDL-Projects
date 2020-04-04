@@ -143,6 +143,17 @@ def main(args):
       # measure elapsed time
       epoch_time.update(time.time() - start_time)
       start_time = time.time()
+  # save checkpoint
+  logger.log('<<<--->>> Supernet Train Complete.')
+  supernet_save_path = logger.path('log') / 'seed-{:}-supernet.pth'.format(logger.seed)
+  save_path = save_checkpoint(
+             {'epoch' : epoch + 1,
+              'args'  : deepcopy(args),
+              'shared_cnn'  : search_model.state_dict(),
+              'w_optimizer' : w_optimizer.state_dict(),
+              'w_scheduler' : w_scheduler.state_dict(),
+              'search_losses' : search_losses},
+              supernet_save_path, logger)
   # search a training
   valid_time = AverageMeter()
   start_time, search_a_time, epoch_time, total_epoch = time.time(), AverageMeter(), AverageMeter(), 250 + config.warmup #config.epochs + config.warmup

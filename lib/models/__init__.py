@@ -22,7 +22,7 @@ from .fitnet_model import FeatureMatching
 def get_cell_based_tiny_net(config):
   if isinstance(config, dict): config = dict2config(config, None) # to support the argument being a dict
   super_type = getattr(config, 'super_type', 'basic')
-  group_names = ['DARTS-V1', 'DARTS-V2', 'GDAS', 'SETN', 'ENAS', 'RANDOM']
+  group_names = ['DARTS-V1', 'DARTS-V2', 'GDAS', 'SETN', 'ENAS', 'RANDOM', "MetaENAS"]
   if super_type == 'basic' and config.name in group_names:
     from .cell_searchs import nas201_super_nets as nas_super_nets
     inputs = [config.C, config.N, config.max_nodes, config.num_classes, config.space, config.affine, config.track_running_stats]
