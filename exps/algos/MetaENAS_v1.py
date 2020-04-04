@@ -18,45 +18,6 @@ from utils        import get_model_infos, obtain_accuracy
 from log_utils    import AverageMeter, time_string, convert_secs2time
 from models       import get_cell_based_tiny_net, get_search_spaces
 from nas_201_api  import NASBench201API as API
-import higher
-
-def meta_train_shared_cnn(xloader, shared_cnn, criterion, scheduler, optimizer, epoch_str, print_freq, logger):
-  # MAML
-  # Sampling: uniform
-  data_time, batch_time = AverageMeter(), AverageMeter()
-  losses, top1s, top5s, xend = AverageMeter(), AverageMeter(), AverageMeter(), time.time()
-
-  shared_cnn.train()
-  with higher.innerloop_ctx(shared_cnn, optimizer, copy_initial_weights=False) as (fmodel, diffopt):
-      for step, (inputs, targets) in enumerate(xloader):
-        scheduler.update(None, 1.0 * step / len(xloader))
-        inputs = inputs.cuda()
-        targets = targets.cuda(non_blocking=True)
-        # measure data loading time
-        data_time.update(time.time() - xend)
-
-        sampled_arch = fmodel.dync_genotype(use_random=True)
-        fmodel.update_arch(sampled_arch)
-        _, logits = fmodel(inputs)
-        loss      = criterion(logits, targets)
-        torch.nn.utils.clip_grad_norm_(fmodel.parameters(), 5)
-        diffopt.step()
-        # record
-        prec1, prec5 = obtain_accuracy(logits.data, targets.data, topk=(1, 5))
-        losses.update(loss.item(),  inputs.size(0))
-        top1s.update (prec1.item(), inputs.size(0))
-        top5s.update (prec5.item(), inputs.size(0))
-
-        # measure elapsed time
-        batch_time.update(time.time() - xend)
-        xend = time.time()
-
-        if step % print_freq == 0 or step + 1 == len(xloader):
-          Sstr = '*Train-Shared-CNN* ' + time_string() + ' [{:}][{:03d}/{:03d}]'.format(epoch_str, step, len(xloader))
-          Tstr = 'Time {batch_time.val:.2f} ({batch_time.avg:.2f}) Data {data_time.val:.2f} ({data_time.avg:.2f})'.format(batch_time=batch_time, data_time=data_time)
-          Wstr = '[Loss {loss.val:.3f} ({loss.avg:.3f})  Prec@1 {top1.val:.2f} ({top1.avg:.2f}) Prec@5 {top5.val:.2f} ({top5.avg:.2f})]'.format(loss=losses, top1=top1s, top5=top5s)
-          logger.log(Sstr + ' ' + Tstr + ' ' + Wstr)
-  return losses.avg, top1s.avg, top5s.avg
 
 def train_shared_cnn(xloader, shared_cnn, criterion, scheduler, optimizer, epoch_str, print_freq, logger):
   # MAML
@@ -165,48 +126,51 @@ def train_controller(xloader, w_loader, shared_cnn, controller, criterion, optim
     log_prob, entropy, sampled_arch = controller()
     shared_cnn.update_arch(sampled_arch)
     #few shot start
-    shared_cnn.train()
     fs_end = time.time()
     idata_time, ibatch_time = AverageMeter(), AverageMeter()
     losses, top1s, top5s, iend = AverageMeter(), AverageMeter(), AverageMeter(), time.time()
-    with higher.innerloop_ctx(shared_cnn, optimizer, track_higher_grads=False) as (fmodel, diffopt):
-        for istep in range(n_shot):
-            try:
-              t_inputs, t_targets = next(iloader_iter)
-            except:
-              iloader_iter = iter(w_loader)
-              t_inputs, t_targets = next(iloader_iter)
-            t_inputs = t_inputs.cuda()
-            t_targets = t_targets.cuda(non_blocking=True)
-            # measure data loading time
-            idata_time.update(time.time() - iend)
+    shared_cnn.train()
+    for istep in range(n_shot):
+        try:
+          t_inputs, t_targets = next(iloader_iter)
+        except:
+          iloader_iter = iter(w_loader)
+          t_inputs, t_targets = next(iloader_iter)
+        t_inputs = t_inputs.cuda()
+        t_targets = t_targets.cuda(non_blocking=True)
+        # measure data loading time
+        idata_time.update(time.time() - xend)
 
-            # training
-            _, logits = fmodel(t_inputs)
-            loss      = criterion(logits, t_targets)
-            torch.nn.utils.clip_grad_norm_(fmodel.parameters(), 5)
-            diffopt.step()
+        # training
+        shared_cnn.zero_grad()
+        _, logits = shared_cnn(t_inputs)
+        loss      = criterion(logits, t_targets)
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(shared_cnn.parameters(), 5)
+        w_optimizer.step()
 
-            # record
-            prec1, prec5 = obtain_accuracy(logits.data, t_targets.data, topk=(1, 5))
-            losses.update(loss.item(),  t_inputs.size(0))
-            top1s.update (prec1.item(), t_inputs.size(0))
-            top5s.update (prec5.item(), t_inputs.size(0))
+        # record
+        prec1, prec5 = obtain_accuracy(logits.data, t_targets.data, topk=(1, 5))
+        losses.update(loss.item(),  t_inputs.size(0))
+        top1s.update (prec1.item(), t_inputs.size(0))
+        top5s.update (prec5.item(), t_inputs.size(0))
 
-        # measure elapsed time
-        ibatch_time.update(time.time() - iend)
-        iend = time.time()
-        if istep+1 == n_shot:
-            Sstr = '--*Few-Shot-Train-Shared-CNN* ' + time_string() + ' [{:03d}|{:02d} steps]'.format(step, istep)
-            Tstr = 'Time {ibatch_time.val:.2f} ({ibatch_time.avg:.2f}) Data {idata_time.val:.2f} ({idata_time.avg:.2f})'.format(ibatch_time=ibatch_time, idata_time=idata_time)
-            Wstr = '[Loss {loss.val:.3f} ({loss.avg:.3f})  Prec@1 {top1.val:.2f} ({top1.avg:.2f}) Prec@5 {top5.val:.2f} ({top5.avg:.2f})]'.format(loss=losses, top1=top1s, top5=top5s)
-            logger.log(Sstr + ' ' + Tstr + ' ' + Wstr)
-        few_shot_time.update(time.time() - fs_end)
-        # few shot end
-        _, logits = fmodel(inputs)
-        val_top1, val_top5 = obtain_accuracy(logits.data, targets.data, topk=(1, 5))
-        val_top1  = val_top1.view(-1) / 100
-        reward = val_top1 + config.ctl_entropy_w * entropy
+    # measure elapsed time
+    ibatch_time.update(time.time() - iend)
+    iend = time.time()
+    if (istep+1) % print_freq == 0:
+        Sstr = '--*Few-Shot-Train-Shared-CNN* ' + time_string() + ' [{:03d}|{:02d} steps]'.format(step, istep)
+        Tstr = 'Time {ibatch_time.val:.2f} ({ibatch_time.avg:.2f}) Data {idata_time.val:.2f} ({idata_time.avg:.2f})'.format(ibatch_time=ibatch_time, idata_time=idata_time)
+        Wstr = '[Loss {loss.val:.3f} ({loss.avg:.3f})  Prec@1 {top1.val:.2f} ({top1.avg:.2f}) Prec@5 {top5.val:.2f} ({top5.avg:.2f})]'.format(loss=losses, top1=top1s, top5=top5s)
+        logger.log(Sstr + ' ' + Tstr + ' ' + Wstr)
+    few_shot_time.update(time.time() - fs_end)
+    # few shot end
+    with torch.no_grad():
+      shared_cnn.eval()
+      _, logits = shared_cnn(inputs)
+      val_top1, val_top5 = obtain_accuracy(logits.data, targets.data, topk=(1, 5))
+      val_top1  = val_top1.view(-1) / 100
+    reward = val_top1 + config.ctl_entropy_w * entropy
     if config.baseline is None:
       baseline = val_top1
     else:

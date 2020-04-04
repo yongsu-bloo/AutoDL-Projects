@@ -33,19 +33,18 @@ benchmark_file=${TORCH_HOME}/NAS-Bench-201-v1_1-096897.pth
 
 save_dir=./output/search-cell-${space}/MetaENAS-${dataset}-BN${BN}
 
-OMP_NUM_THREADS=4 python ./exps/algos/MetaENAS.py \
+python ./exps/algos/MetaENAS.py \
   --exp_name ${exp_name} \
 	--save_dir ${save_dir} --max_nodes ${max_nodes} --channel ${channel} --num_cells ${num_cells} \
 	--dataset ${dataset} --data_path ${data_path} \
 	--search_space_name ${space} \
 	--arch_nas_dataset ${benchmark_file} \
 	--track_running_stats ${BN} \
-	--config_path ./configs/research/MetaENAS.config \
+	--config_path ./configs/research/MetaENAS150.config \
   --n_shot 1 \
 	--controller_entropy_weight 0.0001 \
 	--controller_bl_dec 0.99 \
-	--controller_train_steps 25 \
+	--controller_train_steps 50 \
 	--controller_num_aggregate 20 \
 	--controller_num_samples 100 \
-	--workers 8 --print_freq 200 --rand_seed ${seed} \
-  --load_supernet /home/yongsu/research/nas/AutoDL-Projects/output/search-cell-nas-bench-201/MetaENAS-cifar10-BN0/nometa/seed-39399-supernet.pth
+	--workers 4 --print_freq 200 --rand_seed ${seed}
