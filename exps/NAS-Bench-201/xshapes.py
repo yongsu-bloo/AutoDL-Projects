@@ -165,7 +165,7 @@ def filter_indexes(xlist, mode, save_dir, seeds):
         if not temp_path.exists():
           all_indexes.append(index)
           break
-  print('{:} [FILTER-INDEXES] : there are {:} architectures in total'.format(time_string(), len(all_indexes)))
+  print('{:} [FILTER-INDEXES] : there are {:}/{:} architectures in total'.format(time_string(), len(all_indexes), len(xlist)))
 
   SLURM_PROCID, SLURM_NTASKS = 'SLURM_PROCID', 'SLURM_NTASKS'
   if SLURM_PROCID in os.environ and  SLURM_NTASKS in os.environ:  # run on the slurm
@@ -201,7 +201,7 @@ if __name__ == '__main__':
   parser.add_argument('--datasets',    type=str, nargs='+',      help='The applied datasets.')
   parser.add_argument('--xpaths',      type=str, nargs='+',      help='The root path for this dataset.')
   parser.add_argument('--splits',      type=int, nargs='+',      help='The root path for this dataset.')
-  parser.add_argument('--hyper',       type=str, default='12', choices=['12', '90'], help='The tag for hyper-parameters.')
+  parser.add_argument('--hyper',       type=str, default='12', choices=['01', '12', '90'], help='The tag for hyper-parameters.')
   parser.add_argument('--seeds'  ,     type=int, nargs='+',      help='The range of models to be evaluated')
   args = parser.parse_args()
 
