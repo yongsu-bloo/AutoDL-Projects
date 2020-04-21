@@ -146,9 +146,9 @@ def main(args):
         else:
             raise ValueError("Architecture string or nas checkpoint required")
 
-        if args.search_space_name == "nas-bench-201":
+        if args.search_space_name == "nas-bench-201" and args.channel==16 and args.num_cells==5:
             # Normal Training result from nas201
-            api = API('{:}/{:}'.format(os.environ['TORCH_HOME'], 'NAS-Bench-201-v1_0-e61699.pth'))
+            api = API('{:}/{:}'.format(os.environ['TORCH_HOME'], 'NAS-Bench-201-v1_1-096897.pth'))
             logger.log('{:} create API = {:} done'.format(time_string(), api))
             logger.log(genotype)
             arch_index = api.query_index_by_arch(genotype)

@@ -32,7 +32,7 @@ def search_func(xloader, network, criterion, scheduler, w_optimizer, a_optimizer
     arch_targets = arch_targets.cuda(non_blocking=True)
     # measure data loading time
     data_time.update(time.time() - end)
-    
+
     # update the weights
     sampled_arch = network.module.dync_genotype(True)
     network.module.set_cal_mode('dynamic', sampled_arch)
@@ -150,7 +150,7 @@ def main(xargs):
                                                         track_running_stats=bool(xargs.track_running_stats)), None)
   logger.log('search space : {:}'.format(search_space))
   search_model = get_cell_based_tiny_net(model_config)
-  
+
   w_optimizer, w_scheduler, criterion = get_optim_scheduler(search_model.get_weights(), config)
   a_optimizer = torch.optim.Adam(search_model.get_alphas(), lr=xargs.arch_learning_rate, betas=(0.5, 0.999), weight_decay=xargs.arch_weight_decay)
   logger.log('w-optimizer : {:}'.format(w_optimizer))
@@ -253,7 +253,7 @@ def main(xargs):
   logger.log('SETN : run {:} epochs, cost {:.1f} s, last-geno is {:}.'.format(total_epoch, search_time.sum, genotype))
   if api is not None: logger.log('{:}'.format( api.query_by_arch(genotype) ))
   logger.close()
-  
+
 
 
 if __name__ == '__main__':
@@ -268,6 +268,7 @@ if __name__ == '__main__':
   parser.add_argument('--select_num',         type=int,   help='The number of selected architectures to evaluate.')
   parser.add_argument('--track_running_stats',type=int,   choices=[0,1],help='Whether use track_running_stats or not in the BN layer.')
   parser.add_argument('--config_path',        type=str,   help='The path of the configuration.')
+  parser.add_argument('--model_config',       type=str,   help='The path of the model configuration.')
   # architecture leraning rate
   parser.add_argument('--arch_learning_rate', type=float, default=3e-4, help='learning rate for arch encoding')
   parser.add_argument('--arch_weight_decay',  type=float, default=1e-3, help='weight decay for arch encoding')
