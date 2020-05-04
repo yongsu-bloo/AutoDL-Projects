@@ -1,8 +1,6 @@
 ##################################################
 # Copyright (c) Xuanyi Dong [GitHub D-X-Y], 2019 #
 ######################################################################################
-# One-Shot Neural Architecture Search via Self-Evaluated Template Network, ICCV 2019 #
-######################################################################################
 import os, sys, time, glob, random, argparse
 import numpy as np
 from copy import deepcopy
@@ -11,7 +9,7 @@ import torch.nn as nn
 from pathlib import Path
 lib_dir = (Path("__file__").parent / 'lib').resolve()
 if str(lib_dir) not in sys.path: sys.path.insert(0, str(lib_dir))
-from config_utils import load_config, dict2config, configure2str
+from config_utils import load_config, dict2config
 from datasets     import get_datasets, get_nas_search_loaders
 from procedures   import prepare_seed, prepare_logger, save_checkpoint, copy_checkpoint, get_optim_scheduler
 from procedures.transfer import get_search_methods
@@ -21,28 +19,34 @@ from models       import get_cell_based_tiny_net, get_search_spaces, load_net_fr
 from nas_201_api  import NASBench201API as API
 from collections import OrderedDict
 
-def get_top_n(data, n=2, order=True):
+def get_n_archs(data, n, pick_top=True, order=True):
     """Get top n players by score.
     Returns a dictionary or an `OrderedDict` if `order` is true.
     """
-    top = sorted(data.items(), key=lambda x: x[1]['accuracy'], reverse=True)[:n]
+    if pick_top:
+        subset = sorted(data.items(), key=lambda x: x[1]['accuracy'], reverse=True)[:n]
+    else:
+        rand_indicies = random.sample(range(len(data)), n)
+        subset = filter(lambda x: x[0] in rand_indicies, data.items())
     if order:
-        return OrderedDict(top)
-    return dict(top)
+        return OrderedDict(subset)
+    else:
+        return dict(subset)
 
-def list_arch(self, dataset, metric_on_set, FLOP_max=None, Param_max=None, use_12epochs_result=False):
+def list_arch(api, dataset, metric_on_set, FLOP_max=None, Param_max=None, use_12epochs_result=False):
     """Find the architecture with the highest accuracy based on some constraints."""
-    if use_12epochs_result: basestr, arch2infos = '12epochs' , self.arch2infos_less
-    else                  : basestr, arch2infos = '200epochs', self.arch2infos_full
+    if use_12epochs_result: basestr, arch2infos = '12epochs' , api.arch2infos_less
+    else                  : basestr, arch2infos = '200epochs', api.arch2infos_full
     result = OrderedDict()
-    for i, idx in enumerate(self.evaluated_indexes):
-      info = arch2infos[idx].get_compute_costs(dataset)
+    for i, arch_id in enumerate(api.evaluated_indexes):
+      info = arch2infos[arch_id].get_compute_costs(dataset)
       flop, param, latency = info['flops'], info['params'], info['latency']
       if FLOP_max  is not None and flop  > FLOP_max : continue
       if Param_max is not None and param > Param_max: continue
-      xinfo = arch2infos[idx].get_metrics(dataset, metric_on_set)
+      xinfo = arch2infos[arch_id].get_metrics(dataset, metric_on_set)
       loss, accuracy = xinfo['loss'], xinfo['accuracy']
-      result[idx] = { "accuracy": accuracy, "flop": flop, "param": param }
+      arch_str = api.query_by_index(arch_id).arch_str
+      result[arch_id] = { "arch_str": arch_str, "accuracy": accuracy, "flop": flop, "param": param }
     return result
 
 def get_lr(optimizer):
@@ -86,11 +90,14 @@ def search_w_setn(xloader, network, criterion, scheduler, w_optimizer, epoch_str
     # measure data loading time
     data_time.update(time.time() - end)
     # update the weights
-    arch_str = random.sample(list(search_scope), 1)[0]
-    sampled_arch = Structure(API.str2lists(arch_str))
-    # sampled_arch = network.module.dync_genotype(True) # uniform sampling
+    if search_scope is None:
+        sampled_arch = network.module.dync_genotype(True) # uniform sampling
+        #network.module.set_cal_mode( 'urs' )
+    else:
+        arch_info = random.sample(search_scope.items(), 1)[0] # ( arch_id, {arch_str, accuracy, flop, param} )
+        arch_str = arch_info[1]['arch_str']
+        sampled_arch = Structure(API.str2lists(arch_str))
     network.module.set_cal_mode('dynamic', sampled_arch)
-    #network.module.set_cal_mode( 'urs' )
     network.zero_grad()
     _, logits, st_outs = network(base_inputs, out_all=True)
     base_loss = criterion(logits, base_targets)
@@ -221,21 +228,20 @@ def main(args):
   (search_w_func, search_a_func), valid_func = get_search_methods(args.nas_name, 20)
   # specify search space
   n_top = args.n_top
-  all_archs = list_arch(api, 'cifar10', 'ori-test')
-  top_n_archs = get_top_n(all_archs, n_top)
-  search_scope = [api.query_by_index(a).arch_str for a in top_n_archs]
- # for a in top_n_archs:
- #     api.query_by_index(a).arch_str
-# '|nor_conv_3x3~0|+|nor_conv_3x3~0|nor_conv_3x3~1|+|skip_connect~0|nor_conv_3x3~1|nor_conv_1x1~2|'
-# '|nor_conv_3x3~0|+|nor_conv_3x3~0|nor_conv_3x3~1|+|skip_connect~0|nor_conv_1x1~1|nor_conv_3x3~2|'
-# '|nor_conv_3x3~0|+|nor_conv_3x3~0|nor_conv_3x3~1|+|skip_connect~0|nor_conv_3x3~1|nor_conv_3x3~2|'
-# '|nor_conv_3x3~0|+|nor_conv_1x1~0|nor_conv_3x3~1|+|skip_connect~0|nor_conv_3x3~1|nor_conv_1x1~2|'
-# '|nor_conv_3x3~0|+|nor_conv_1x1~0|nor_conv_3x3~1|+|skip_connect~0|nor_conv_1x1~1|nor_conv_1x1~2|'
-# '|nor_conv_1x1~0|+|nor_conv_3x3~0|nor_conv_3x3~1|+|skip_connect~0|nor_conv_3x3~1|nor_conv_3x3~2|'
-# '|nor_conv_3x3~0|+|nor_conv_1x1~0|nor_conv_3x3~1|+|skip_connect~0|nor_conv_1x1~1|nor_conv_3x3~2|'
-# '|nor_conv_3x3~0|+|nor_conv_3x3~0|nor_conv_1x1~1|+|skip_connect~0|nor_conv_3x3~1|nor_conv_3x3~2|'
-# '|nor_conv_3x3~0|+|nor_conv_3x3~0|none~1|+|skip_connect~0|nor_conv_3x3~1|nor_conv_3x3~2|'
-# '|nor_conv_3x3~0|+|nor_conv_1x1~0|nor_conv_3x3~1|+|skip_connect~0|nor_conv_3x3~1|nor_conv_3x3~2|'
+  if n_top:
+      all_archs = list_arch(api, args.dataset, 'ori-test')
+      pick_top = True
+      if n_top < 0: # random pick
+        n_top = -n_top
+        pick_top = False
+      assert n_top > 0, "[Picking search space] n_top argument should be int. Now given {} with type {}".format(args.n_top, type(args.n_top))
+      picked_archs = get_n_archs(all_archs, n_top, pick_top)
+      logger.log("[Picked search space] Dataset: {:}, Pick Method: {:}".format(args.dataset, "Top" if pick_top else "Random"))
+      for arch_id in picked_archs:
+          logger.log("Arch id [{:}], test accuracy [{:.2f}], arch_str [ {:} ], flops [{:}], params [{:}]]".format(arch_id, picked_archs[arch_id]['accuracy'], picked_archs[arch_id]['arch_str'], picked_archs[arch_id]['flop'], picked_archs[arch_id]['param']))
+  else:
+      picked_archs = None
+
   # search w training
   start_time, search_w_time, epoch_time, total_epoch = time.time(), AverageMeter(), AverageMeter(), config.epochs + config.warmup
   for epoch in range(start_epoch, total_epoch):
@@ -246,7 +252,7 @@ def main(args):
           search_model.set_tau( args.tau_max - (args.tau_max-args.tau_min) * epoch / (total_epoch-1) )
       logger.log('\n[Search the {:}-th epoch] {:}, LR={:}'.format(epoch_str, need_time, min(w_scheduler.get_lr())))
       search_w_loss, search_w_top1, search_w_top5 \
-            = search_w_setn(search_loader, network, criterion, w_scheduler, w_optimizer, epoch_str, args.print_freq, logger, search_scope=search_scope)
+            = search_w_setn(search_loader, network, criterion, w_scheduler, w_optimizer, epoch_str, args.print_freq, logger, search_scope=picked_archs)
       search_w_time.update(time.time() - start_time)
       logger.log('[{:}] search [base] : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%, time-cost={:.1f} s'.format(epoch_str, search_w_loss, search_w_top1, search_w_top5, search_w_time.sum))
       search_losses[epoch] = search_w_loss
@@ -262,7 +268,8 @@ def main(args):
               'shared_cnn'  : search_model.state_dict(),
               'w_optimizer' : w_optimizer.state_dict(),
               'w_scheduler' : w_scheduler.state_dict(),
-              'search_losses' : search_losses},
+              'search_losses' : search_losses,
+              'search_scope' : picked_archs},
               supernet_save_path, logger)
   # search a training
   valid_time = AverageMeter()
@@ -317,6 +324,7 @@ def main(args):
                   "valid_losses" : deepcopy(valid_losses),
                   "valid_acc1s" : deepcopy(valid_acc1s),
                   "valid_acc5s" : deepcopy(valid_acc5s),
+                  "search_scope" : picked_archs
                   },
                   model_base_path, logger)
       last_info = save_checkpoint({
@@ -345,11 +353,11 @@ def main(args):
 
 
 if __name__ == '__main__':
-  parser = argparse.ArgumentParser("Part Re-Search2")
+  parser = argparse.ArgumentParser("Possibility check Experiment")
   parser.add_argument('--exp_name',           type=str,   default="",     help='Experiment name')
   parser.add_argument('--overwrite',          type=bool,  default=False,  help='Overwrite the existing results')
   parser.add_argument("--nas_name",           type=str,   default="SETN", help="NAS algorithm to use")
-  parser.add_argument('--n_top',              type=int,   default=10, help='The number of top architectures to be scope')
+  parser.add_argument('--n_top',              type=int,   help='The number of top architectures to be scope. If negative, random archs are sampled.')
   # data
   parser.add_argument('--data_path',          type=str,   default=os.environ['TORCH_HOME'] + "/cifar.python", help='Path to dataset')
   parser.add_argument('--dataset',            type=str,   default='cifar10', choices=['cifar10', 'cifar100', 'ImageNet16-120'], help='Choose between Cifar10/100 and ImageNet-16.')
@@ -381,3 +389,14 @@ if __name__ == '__main__':
   if args.exp_name != "":
       args.save_dir = "./output/possibility/{}/{}".format(args.dataset, args.exp_name)
   main(args)
+  # top 10 archs
+  # '|nor_conv_3x3~0|+|nor_conv_3x3~0|nor_conv_3x3~1|+|skip_connect~0|nor_conv_3x3~1|nor_conv_1x1~2|'
+  # '|nor_conv_3x3~0|+|nor_conv_3x3~0|nor_conv_3x3~1|+|skip_connect~0|nor_conv_1x1~1|nor_conv_3x3~2|'
+  # '|nor_conv_3x3~0|+|nor_conv_3x3~0|nor_conv_3x3~1|+|skip_connect~0|nor_conv_3x3~1|nor_conv_3x3~2|'
+  # '|nor_conv_3x3~0|+|nor_conv_1x1~0|nor_conv_3x3~1|+|skip_connect~0|nor_conv_3x3~1|nor_conv_1x1~2|'
+  # '|nor_conv_3x3~0|+|nor_conv_1x1~0|nor_conv_3x3~1|+|skip_connect~0|nor_conv_1x1~1|nor_conv_1x1~2|'
+  # '|nor_conv_1x1~0|+|nor_conv_3x3~0|nor_conv_3x3~1|+|skip_connect~0|nor_conv_3x3~1|nor_conv_3x3~2|'
+  # '|nor_conv_3x3~0|+|nor_conv_1x1~0|nor_conv_3x3~1|+|skip_connect~0|nor_conv_1x1~1|nor_conv_3x3~2|'
+  # '|nor_conv_3x3~0|+|nor_conv_3x3~0|nor_conv_1x1~1|+|skip_connect~0|nor_conv_3x3~1|nor_conv_3x3~2|'
+  # '|nor_conv_3x3~0|+|nor_conv_3x3~0|none~1|+|skip_connect~0|nor_conv_3x3~1|nor_conv_3x3~2|'
+  # '|nor_conv_3x3~0|+|nor_conv_1x1~0|nor_conv_3x3~1|+|skip_connect~0|nor_conv_3x3~1|nor_conv_3x3~2|'
