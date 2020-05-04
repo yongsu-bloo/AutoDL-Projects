@@ -1,7 +1,7 @@
 ##################################################
 # Copyright (c) Xuanyi Dong [GitHub D-X-Y], 2019 #
 ######################################################################################
-import os, sys, time, glob, random, argparse
+import os, sys, time, glob, random, argparse, pandas as pd
 import numpy as np
 from copy import deepcopy
 import torch
@@ -17,6 +17,7 @@ from log_utils    import AverageMeter, time_string, convert_secs2time, write_res
 from models       import get_cell_based_tiny_net, get_search_spaces, load_net_from_checkpoint, FeatureMatching, CellStructure as Structure
 from nas_201_api  import NASBench201API as API
 from collections import OrderedDict
+import higher
 
 def get_n_archs(data, n, pick_top=True, order=True):
     """Get top n players by score.
@@ -48,19 +49,15 @@ def list_arch(api, dataset, metric_on_set, FLOP_max=None, Param_max=None, use_12
       result[arch_id] = { "arch_str": arch_str, "accuracy": accuracy, "flop": flop, "param": param }
     return result
 
-def get_lr(optimizer):
-    for param_group in optimizer.param_groups:
-        return param_group['lr']
-
 def get_best_arch(xloader, network, n_samples):
   # setn evaluation
   with torch.no_grad():
     network.eval()
-    archs, valid_accs = network.module.return_topK(n_samples), []
+    archs, valid_accs = network.return_topK(n_samples), []
     #print ('obtain the top-{:} architectures'.format(n_samples))
     loader_iter = iter(xloader)
     for i, sampled_arch in enumerate(archs):
-      network.module.set_cal_mode('dynamic', sampled_arch)
+      network.set_cal_mode('dynamic', sampled_arch)
       try:
         inputs, targets = next(loader_iter)
       except:
@@ -77,7 +74,7 @@ def get_best_arch(xloader, network, n_samples):
     best_arch, best_valid_acc = archs[best_idx], valid_accs[best_idx]
     return best_arch, best_valid_acc
 
-def valid_func(xloader, network, criterion, extra_info, print_freq, logger):
+def valid_func(xloader, network, criterion, print_freq, logger):
   data_time, batch_time, losses, top1, top5 = AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter()
   network.eval()
   end = time.time()
@@ -85,6 +82,7 @@ def valid_func(xloader, network, criterion, extra_info, print_freq, logger):
     # measure data loading time
     data_time.update(time.time() - end)
     # calculate prediction and loss
+    inputs = inputs.cuda(non_blocking=True)
     targets = targets.cuda(non_blocking=True)
 
     features, logits = network(inputs)
@@ -106,13 +104,13 @@ def valid_func(xloader, network, criterion, extra_info, print_freq, logger):
     end = time.time()
 
     if i % print_freq == 0 or (i+1) == len(xloader):
-      Sstr = ' {:5s} '.format("Test") + time_string() + ' [{:03d}/{:03d}]'.format(i, len(xloader))
+      Sstr = time_string() + ' [{:03d}/{:03d}]'.format(i, len(xloader))
       Tstr = 'Time {batch_time.val:.2f} ({batch_time.avg:.2f}) Data {data_time.val:.2f} ({data_time.avg:.2f})'.format(batch_time=batch_time, data_time=data_time)
       Lstr = 'Loss {loss.val:.3f} ({loss.avg:.3f})  Prec@1 {top1.val:.2f} ({top1.avg:.2f}) Prec@5 {top5.val:.2f} ({top5.avg:.2f})'.format(loss=losses, top1=top1, top5=top5)
       Istr = 'Size={:}'.format(list(inputs.size()))
       logger.log(Sstr + ' ' + Tstr + ' ' + Lstr + ' ' + Istr)
 
-  logger.log(' **{mode:5s}** Prec@1 {top1.avg:.2f} Prec@5 {top5.avg:.2f} Error@1 {error1:.2f} Error@5 {error5:.2f} Loss:{loss:.3f}'.format(mode=mode.upper(), top1=top1, top5=top5, error1=100-top1.avg, error5=100-top5.avg, loss=losses.avg))
+  logger.log(' **{mode:5s}** Prec@1 {top1.avg:.2f} Prec@5 {top5.avg:.2f} Error@1 {error1:.2f} Error@5 {error5:.2f} Loss:{loss:.3f}'.format(mode="test".upper(), top1=top1, top5=top5, error1=100-top1.avg, error5=100-top5.avg, loss=losses.avg))
   return losses.avg, top1.avg, top5.avg
 
 
@@ -122,17 +120,17 @@ def main(args):
   torch.backends.cudnn.benchmark = False
   torch.backends.cudnn.deterministic = True
   prepare_seed(args.rand_seed)
-  logger = prepare_logger(args)
-  total_time = time.time()
-
   checkpoint = torch.load( args.checkpoint )
   xargs      = checkpoint['args']
-
   exp_name = xargs.exp_name if args.exp_name == "" else args.exp_name
-  args.save_dir = "./output/ranking/{}".format(args.exp_name)
+  args.save_dir = "./output/ranking/{}".format(exp_name)
+  logger = prepare_logger(args)
+
+  # total_time = time.time()
 
   train_data, valid_data, xshape, class_num = get_datasets(xargs.dataset, args.data_path, args.cutout_length)
   optim_config = load_config(xargs.config_path, {'class_num': class_num, 'xshape': xshape}, logger)
+  train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True , num_workers=xargs.workers, pin_memory=True)
   valid_loader = torch.utils.data.DataLoader(valid_data, batch_size=args.batch_size, shuffle=False, num_workers=xargs.workers, pin_memory=True)
   logger.log('||||||| {:10s} ||||||| Valid-Loader-Num={:}, batch size={:}'.format(xargs.dataset, len(valid_loader), args.batch_size))
   logger.log('||||||| {:10s} ||||||| Optim-Config={:}'.format(xargs.dataset, optim_config))
@@ -151,40 +149,68 @@ def main(args):
   api = API(xargs.arch_nas_dataset)
   logger.log('{:} create API = {:} done'.format(time_string(), api))
   last_info, model_base_path, model_best_path = logger.path('info'), logger.path('model'), logger.path('best')
-  _, _, criterion = get_optim_scheduler(search_model.parameters(), optim_config)
+  w_optimizer, w_scheduler, criterion = get_optim_scheduler(search_model.parameters(), optim_config)
   logger.log('criterion  : {:}'.format(criterion))
-  network, criterion = torch.nn.DataParallel(search_model).cuda(), criterion.cuda()
-  # specify search space
+  # network, criterion = torch.nn.DataParallel(search_model).cuda(), criterion.cuda()
+  search_model.load_state_dict( checkpoint['search_model'] if 'search_model' in checkpoint else checkpoint['shared_cnn'] )
+  network, criterion = search_model.cuda(), criterion.cuda()
+
   n_top = args.n_top
+  k_shot = args.k_shot
+  # specify search space
   if "search_scope" in checkpoint:
       search_scope = checkpoint['search_scope']
+      logger.log("***Search Scope found***")
   elif n_top:
-      all_archs = list_arch(api, args.dataset, 'ori-test')
+      all_archs = list_arch(api, xargs.dataset, 'ori-test')
       pick_top = True
       if n_top < 0: # random pick
         n_top = -n_top
         pick_top = False
       assert n_top > 0, "[Picking search space] n_top argument should be int. Now given {} with type {}".format(args.n_top, type(args.n_top))
       search_scope = get_n_archs(all_archs, n_top, pick_top)
+      logger.log("***Search scope not found but generated. n_top: {:}, pick_top: {:}***".format(n_top, pick_top))
   else:
       raise ValueError("search_scope is not in checkpoint nor n_top is given properly. Given n_top: {:}".format(n_top))
   # evaluation
+  train_loader_iter = iter(train_loader)
   for arch_id in search_scope:
       arch_info = search_scope[arch_id] # -> {arch_str, accuracy, flop, param}
       arch_str = arch_info["arch_str"]
       true_acc1 = arch_info["accuracy"]
-      logger.log("Arch id [{:}], Stand-alone test accuracy [{:.2f}], arch_str [ {:} ], flops [{:}], params [{:}]]".format(arch_id, true_acc1, arch_str, arch_info['flop'], arch_info['param']))
+      logger.log("-" * 20 + "\nArch id [{:}], Stand-alone test accuracy [{:.2f}], arch_str [ {:} ], flops [{:}], params [{:}]]".format(arch_id, true_acc1, arch_str, arch_info['flop'], arch_info['param']))
       genotype = Structure(API.str2lists(arch_str))
-      network.module.set_cal_mode('dynamic', genotype)
+      network.set_cal_mode('dynamic', genotype)
       # @TODO few-shot evaluation
-      valid_loss, valid_acc1, valid_acc5 = valid_func(valid_loader, network, criterion, print_freq=xargs.print_freq,logger=logger)
+      # training k-step
+      with higher.innerloop_ctx(network, w_optimizer, track_higher_grads=False) as (fmodel, diffopt):
+          for k in range(k_shot):
+              try:
+                t_inputs, t_targets = next(train_loader_iter)
+              except:
+                train_loader_iter = iter(train_loader)
+                t_inputs, t_targets = next(train_loader_iter)
+              t_inputs = t_inputs.cuda(non_blocking=True)
+              t_targets = t_targets.cuda(non_blocking=True)
+              # fast gradient
+              _, logits = fmodel(t_inputs)
+              loss      = criterion(logits, t_targets)
+              # torch.nn.utils.clip_grad_norm_(fmodel.parameters(), 5)
+              diffopt.step(loss)
+          # evaluation
+          valid_loss, valid_acc1, valid_acc5 = valid_func(valid_loader, fmodel, criterion, print_freq=xargs.print_freq,logger=logger)
+
       acc1_gap = true_acc1 - valid_acc1
       logger.log('***{:s}*** EVALUATION loss = {:.6f}, accuracy@1 = {:.2f}, accuracy@5 = {:.2f}, AccGap(True_acc1 - Supernet_acc1) = {:.2f}'.format(time_string(), valid_loss, valid_acc1, valid_acc5, acc1_gap))
-      search_scope[arch_id]["supernet_acc"] = true_acc1
+      search_scope[arch_id]["supernet_acc"] = valid_acc1
 
   # save result as csv
-  with open('./results/ranking/{}.csv'.format(exp_name), 'w') as res:
+  result_path = './results/ranking/{}.csv'.format(exp_name)
+  # if not os.path.exists(result_path):
+  #     os.mkdir(result_path)
+  with open(result_path, 'w') as res:
     title =   ["arch_id",
+               "arch_str",
                "accuracy",
                "supernet_acc",
                "flops",
@@ -193,13 +219,13 @@ def main(args):
     res.write(title + '\n')
     for arch_id in search_scope:
         arch_info = search_scope[arch_id] # -> {arch_str, accuracy, supernet_acc , flop, param}
-        result = [str(arch_id), arch_info["accuracy"], arch_info["supernet_acc"], arch_info["flop"], arch_info["param"]]
+        result = [ str(a) for a in [arch_id, arch_info["arch_str"], arch_info["accuracy"], arch_info["supernet_acc"], arch_info["flop"], arch_info["param"]] ]
         result = ",".join(result)
         res.write(result + '\n')
 
-  res = pd.read_csv('./results/ranking/{}.csv'.format(exp_name), sep=',', header=0)
+  res = pd.read_csv(result_path, sep=',', header=0)
   res = res.sort_values('supernet_acc', ascending=False)
-  res.to_csv('./results/ranking/{}.csv'.format(exp_name), sep=',', index=False)
+  res.to_csv(result_path, sep=',', index=False)
 
   logger.log('\n' + '-'*100)
   num_bytes = torch.cuda.max_memory_cached( next(network.parameters()).device ) * 1.0
@@ -213,6 +239,7 @@ if __name__ == '__main__':
   parser.add_argument('--exp_name',           type=str,   default="",     help='Experiment name')
   parser.add_argument('--overwrite',          type=bool,  default=False,  help='Overwrite the existing results')
   parser.add_argument('--n_top',              type=int,   default=10,     help='The number of top architectures to be scope. If negative, random archs are sampled.')
+  parser.add_argument('--k_shot',             type=int,   default=0,      help='The number of training step before the evaluation on test data.')
   # data
   parser.add_argument('--data_path',          type=str,   default=os.environ['TORCH_HOME'] + "/cifar.python", help='Path to dataset')
   parser.add_argument('--checkpoint',         type=str,   help='Checkpoint path')
