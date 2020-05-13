@@ -46,6 +46,11 @@ class TinyNetworkMetaENAS(nn.Module):
     # to maintain the sampled architecture
     self.sampled_arch = None
 
+  def set_cal_mode(self, mode, _arch):
+      if mode == "dynamic":
+          return self.update_arch(_arch)
+      else:
+          raise NotImplemented()
   def update_arch(self, _arch):
     if _arch is None:
       self.sampled_arch = None
