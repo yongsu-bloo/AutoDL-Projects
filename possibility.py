@@ -19,15 +19,24 @@ from models       import get_cell_based_tiny_net, get_search_spaces, load_net_fr
 from nas_201_api  import NASBench201API as API
 from collections import OrderedDict
 
-def get_n_archs(data, n, pick_top=True, order=True):
+def get_n_archs(data, n, sample_method="top", order=True):
     """Get top n players by score.
     Returns a dictionary or an `OrderedDict` if `order` is true.
     """
-    if pick_top:
+    if sample_method == "top":
         subset = sorted(data.items(), key=lambda x: x[1]['accuracy'], reverse=True)[:n]
+    elif sample_method == "fair":
+        assert n == 4, "Currently, n must be 4."
+        p1 = '|nor_conv_3x3~0|+|nor_conv_3x3~0|nor_conv_3x3~1|+|skip_connect~0|nor_conv_3x3~1|nor_conv_1x1~2|'
+        p2 = '|nor_conv_1x1~0|+|nor_conv_1x1~0|nor_conv_1x1~1|+|none~0|nor_conv_1x1~1|nor_conv_3x3~2|'
+        p3 = '|nor_conv_3x3~0|+|nor_conv_1x1~0|nor_conv_3x3~1|+|none~0|nor_conv_3x3~1|nor_conv_3x3~2|'
+        p4 = '|nor_conv_1x1~0|+|nor_conv_3x3~0|nor_conv_1x1~1|+|skip_connect~0|nor_conv_1x1~1|nor_conv_1x1~2|'
+        paths = [p1, p2, p3, p4]
+        subset = filter(lambda x: x[1]["arch_str"] in paths, data.items())
     else:
         rand_indicies = random.sample(range(len(data)), n)
         subset = filter(lambda x: x[0] in rand_indicies, data.items())
+
     if order:
         return OrderedDict(subset)
     else:
@@ -220,23 +229,24 @@ def main(args):
     logger.log("=> loading checkpoint of the last-info '{:}' start with {:}-th epoch.".format(last_info, start_epoch))
   else:
     logger.log("=> do not find the last-info file : {:}".format(last_info))
-    start_epoch, genotypes = 0, {-1: search_model.genotype()}
+    start_epoch, genotypes = 0, {-1: search_model.genotype(), "best": None}
     search_losses, search_arch_losses = {}, {}
     valid_losses, valid_acc1s, valid_acc5s = {}, {'best': -1}, {}
     arch_params = {}
   # start training
   (search_w_func, search_a_func), valid_func = get_search_methods(args.nas_name, 20)
   # specify search space
-  n_top = args.n_top
-  if n_top:
-      all_archs = list_arch(api, args.dataset, 'ori-test')
-      pick_top = True
-      if n_top < 0: # random pick
-        n_top = -n_top
-        pick_top = False
-      assert n_top > 0, "[Picking search space] n_top argument should be int. Now given {} with type {}".format(args.n_top, type(args.n_top))
-      picked_archs = get_n_archs(all_archs, n_top, pick_top)
-      logger.log("[Picked search space] Dataset: {:}, Pick Method: {:}".format(args.dataset, "Top" if pick_top else "Random"))
+  n_sample = args.n_sample
+  if sample_method:
+      arch_path = os.environ['TORCH_HOME'] + "/all_archs-{}-test.pt".format(args.dataset)
+      if os.path.isfile(arch_path):
+          all_archs = torch.load(arch_path)["all_archs"]
+      else:
+          all_archs = list_arch(api, args.dataset, 'ori-test')
+          save_checkpoint({'all_archs': all_archs}, arch_path, logger)
+      # assert n_sample > 0, "[Picking search space] n_sample argument should be int. Now given {} with type {}".format(args.n_sample, type(args.n_sample))
+      picked_archs = get_n_archs(all_archs, n_sample, sample_method)
+      logger.log("[Picked search space] Dataset: {:}, Pick Method: {:}".format(args.dataset, sample_method))
       for arch_id in picked_archs:
           logger.log("Arch id [{:}], test accuracy [{:.2f}], arch_str [ {:} ], flops [{:}], params [{:}]]".format(arch_id, picked_archs[arch_id]['accuracy'], picked_archs[arch_id]['arch_str'], picked_archs[arch_id]['flop'], picked_archs[arch_id]['param']))
   else:
@@ -257,92 +267,104 @@ def main(args):
       logger.log('[{:}] search [base] : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%, time-cost={:.1f} s'.format(epoch_str, search_w_loss, search_w_top1, search_w_top5, search_w_time.sum))
       search_losses[epoch] = search_w_loss
       # measure elapsed time
+      eval_supernet()
       epoch_time.update(time.time() - start_time)
       start_time = time.time()
   # save checkpoint
   logger.log('<<<--->>> Supernet Train Complete.')
-  supernet_save_path = logger.path('log') / 'seed-{:}-supernet.pth'.format(logger.seed)
-  save_path = save_checkpoint(
-             {'epoch' : epoch + 1,
+  save_path = save_checkpoint({'epoch' : epoch + 1,
+              's_epoch': 0,
               'args'  : deepcopy(args),
-              'shared_cnn'  : search_model.state_dict(),
+              'search_model': search_model.state_dict(),
               'w_optimizer' : w_optimizer.state_dict(),
+              'a_optimizer' : a_optimizer.state_dict(),
               'w_scheduler' : w_scheduler.state_dict(),
-              'search_losses' : search_losses,
-              'search_scope' : picked_archs},
-              supernet_save_path, logger)
+              'arch_params' : arch_params,
+              'genotypes'   : deepcopy(genotypes),
+              "search_losses" : deepcopy(search_losses),
+              "search_arch_losses" : deepcopy(search_arch_losses),
+              "valid_losses" : deepcopy(valid_losses),
+              "valid_acc1s" : deepcopy(valid_acc1s),
+              "valid_acc5s" : deepcopy(valid_acc5s),
+              "search_scope" : picked_archs
+              },
+              model_base_path, logger)
   # search a training
   valid_time = AverageMeter()
   start_time, search_a_time, epoch_time, total_epoch = time.time(), AverageMeter(), AverageMeter(), 250 + config.warmup #config.epochs + config.warmup
-  for epoch in range(start_epoch, total_epoch):
-      need_time = 'Time Left: {:}'.format( convert_secs2time(epoch_time.val * (total_epoch-epoch), True) )
-      epoch_str = '{:03d}-{:03d}'.format(epoch, total_epoch)
-      if args.nas_name == "GDAS":
-          search_model.set_tau( args.tau_max - (args.tau_max-args.tau_min) * epoch / (total_epoch-1) )
-      logger.log('\n[Search the {:}-th epoch] {:}, LR={:}'.format(epoch_str, need_time, min(w_scheduler.get_lr())))
-      search_a_loss, search_a_top1, search_a_top5 \
-            = search_a_setn(search_loader, network, criterion, a_optimizer, epoch_str, args.print_freq, logger)
-      search_a_time.update(time.time() - start_time)
-      logger.log('[{:}] search [arch] : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%'.format(epoch_str, search_a_loss, search_a_top1, search_a_top5))
-      # validation
-      valid_start_time = time.time()
-      if args.nas_name == "SETN":
-          genotype, _ = get_best_arch(valid_loader, network, args.select_num)
-          network.module.set_cal_mode('dynamic', genotype)
-      else:
-          genotype = search_model.genotype()
-      valid_a_loss , valid_a_top1 , valid_a_top5  = valid_func(valid_loader, network, criterion)
-      valid_time.update(time.time() - valid_start_time)
-      logger.log('[{:}] evaluate : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%, time-cost={:1f} s'.format(epoch_str, valid_a_loss, valid_a_top1, valid_a_top5, valid_time.sum))
-      # check the best accuracy
-      search_arch_losses[epoch] = search_a_loss
-      valid_losses[epoch] = valid_a_loss
-      valid_acc1s[epoch] = valid_a_top1
-      valid_acc5s[epoch] = valid_a_top5
-      genotypes[epoch] = genotype
-      with torch.no_grad():
-          arch_param = nn.functional.softmax(search_model.arch_parameters, dim=-1).cpu().numpy()
-      arch_params[epoch] = arch_param
-      logger.log('<<<--->>> The {:}-th epoch : {:}'.format(epoch_str, genotypes[epoch]))
-      if valid_a_top1 > valid_acc1s['best']:
-          valid_acc1s['best'] = valid_a_top1
-          genotypes['best']   = genotypes[epoch]
-          arch_params['best'] = arch_param
-          find_best = True
-      else: find_best = False
-      # save checkpoint
-      save_path = save_checkpoint({'epoch' : epoch + 1,
-                  'args'  : deepcopy(args),
-                  'search_model': search_model.state_dict(),
-                  'w_optimizer' : w_optimizer.state_dict(),
-                  'a_optimizer' : a_optimizer.state_dict(),
-                  'w_scheduler' : w_scheduler.state_dict(),
-                  'arch_params' : arch_params,
-                  'genotypes'   : deepcopy(genotypes),
-                  "search_losses" : deepcopy(search_losses),
-                  "search_arch_losses" : deepcopy(search_arch_losses),
-                  "valid_losses" : deepcopy(valid_losses),
-                  "valid_acc1s" : deepcopy(valid_acc1s),
-                  "valid_acc5s" : deepcopy(valid_acc5s),
-                  "search_scope" : picked_archs
-                  },
-                  model_base_path, logger)
-      last_info = save_checkpoint({
-              'epoch': epoch + 1,
-              'args' : deepcopy(args),
-              'last_checkpoint': save_path,
-              }, logger.path('info'), logger)
-      if find_best:
-          logger.log('<<<--->>> The {:}-th epoch : find the highest validation accuracy : {:.2f}%.'.format(epoch_str, valid_a_top1))
-          copy_checkpoint(model_base_path, model_best_path, logger)
-      logger.log('arch-parameters :\n{:}'.format( arch_param ))
-      if api is not None: logger.log('{:}'.format(api.query_by_arch( genotype )))
-      # measure elapsed time
-      epoch_time.update(time.time() - start_time)
-      start_time = time.time()
+  if not args.no_search:
+      for s_epoch in range(start_epoch, total_epoch):
+          need_time = 'Time Left: {:}'.format( convert_secs2time(epoch_time.val * (total_epoch-s_epoch), True) )
+          epoch_str = '{:03d}-{:03d}'.format(s_epoch, total_epoch)
+          if args.nas_name == "GDAS":
+              search_model.set_tau( args.tau_max - (args.tau_max-args.tau_min) * s_epoch / (total_epoch-1) )
+          logger.log('\n[Search the {:}-th epoch] {:}, LR={:}'.format(epoch_str, need_time, min(w_scheduler.get_lr())))
+          search_a_loss, search_a_top1, search_a_top5 \
+                = search_a_setn(search_loader, network, criterion, a_optimizer, epoch_str, args.print_freq, logger)
+          search_a_time.update(time.time() - start_time)
+          logger.log('[{:}] search [arch] : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%'.format(epoch_str, search_a_loss, search_a_top1, search_a_top5))
+          # validation
+          valid_start_time = time.time()
+          if args.nas_name == "SETN":
+              genotype, _ = get_best_arch(valid_loader, network, args.select_num)
+              network.module.set_cal_mode('dynamic', genotype)
+          else:
+              genotype = search_model.genotype()
+          valid_a_loss , valid_a_top1 , valid_a_top5  = valid_func(valid_loader, network, criterion)
+          valid_time.update(time.time() - valid_start_time)
+          logger.log('[{:}] evaluate : loss={:.2f}, accuracy@1={:.2f}%, accuracy@5={:.2f}%, time-cost={:1f} s'.format(epoch_str, valid_a_loss, valid_a_top1, valid_a_top5, valid_time.sum))
+          # check the best accuracy
+          search_arch_losses[s_epoch] = search_a_loss
+          valid_losses[s_epoch] = valid_a_loss
+          valid_acc1s[s_epoch] = valid_a_top1
+          valid_acc5s[s_epoch] = valid_a_top5
+          genotypes[s_epoch] = genotype
+          with torch.no_grad():
+              arch_param = nn.functional.softmax(search_model.arch_parameters, dim=-1).cpu().numpy()
+          arch_params[s_epoch] = arch_param
+          logger.log('<<<--->>> The {:}-th epoch : {:}'.format(epoch_str, genotypes[s_epoch]))
+          if valid_a_top1 > valid_acc1s['best']:
+              valid_acc1s['best'] = valid_a_top1
+              genotypes['best']   = genotypes[s_epoch]
+              arch_params['best'] = arch_param
+              find_best = True
+          else: find_best = False
+          # save checkpoint
+          save_path = save_checkpoint({'epoch' : epoch + 1,
+                      's_epoch' : s_epoch,
+                      'args'  : deepcopy(args),
+                      'search_model': search_model.state_dict(),
+                      'w_optimizer' : w_optimizer.state_dict(),
+                      'a_optimizer' : a_optimizer.state_dict(),
+                      'w_scheduler' : w_scheduler.state_dict(),
+                      'arch_params' : arch_params,
+                      'genotypes'   : deepcopy(genotypes),
+                      "search_losses" : deepcopy(search_losses),
+                      "search_arch_losses" : deepcopy(search_arch_losses),
+                      "valid_losses" : deepcopy(valid_losses),
+                      "valid_acc1s" : deepcopy(valid_acc1s),
+                      "valid_acc5s" : deepcopy(valid_acc5s),
+                      "search_scope" : picked_archs
+                      },
+                      model_base_path, logger)
+          last_info = save_checkpoint({
+                  'epoch': epoch + 1,
+                  'args' : deepcopy(args),
+                  'last_checkpoint': save_path,
+                  }, logger.path('info'), logger)
+          if find_best:
+              logger.log('<<<--->>> The {:}-th epoch : find the highest validation accuracy : {:.2f}%.'.format(epoch_str, valid_a_top1))
+              copy_checkpoint(model_base_path, model_best_path, logger)
+          logger.log('arch-parameters :\n{:}'.format( arch_param ))
+          if api is not None: logger.log('{:}'.format(api.query_by_arch( genotype )))
+          # measure elapsed time
+          epoch_time.update(time.time() - start_time)
+          start_time = time.time()
+  else:
+      total_epoch = 0
 
   logger.log('\n' + '-'*100)
-  # check the performance from the architecture dataset
+  check the performance from the architecture dataset
   logger.log('{:} : run {:} epochs, cost w-{:.1f} + a-{:.1f} s, last-geno is {:}.'.format(args.nas_name, total_epoch, search_w_time.sum, search_a_time.sum, genotypes[total_epoch-1]))
   if api is not None: logger.log('{:}'.format( api.query_by_arch(genotypes[total_epoch-1]) ))
   logger.log('The best-geno is {:} with Valid Acc {:}.'.format(genotypes['best'], valid_acc1s['best']))
@@ -357,7 +379,9 @@ if __name__ == '__main__':
   parser.add_argument('--exp_name',           type=str,   default="",     help='Experiment name')
   parser.add_argument('--overwrite',          type=bool,  default=False,  help='Overwrite the existing results')
   parser.add_argument("--nas_name",           type=str,   default="SETN", help="NAS algorithm to use")
-  parser.add_argument('--n_top',              type=int,   help='The number of top architectures to be scope. If negative, random archs are sampled.')
+  parser.add_argument("--sample_method",      type=str)
+  parser.add_argument('--n_sample',           type=int,   help='The number of top architectures to be scope. If negative, random archs are sampled.')
+  parser.add_argument('--no_search',          type=bool,  default=False)
   # data
   parser.add_argument('--data_path',          type=str,   default=os.environ['TORCH_HOME'] + "/cifar.python", help='Path to dataset')
   parser.add_argument('--dataset',            type=str,   default='cifar10', choices=['cifar10', 'cifar100', 'ImageNet16-120'], help='Choose between Cifar10/100 and ImageNet-16.')
@@ -368,7 +392,7 @@ if __name__ == '__main__':
   parser.add_argument('--channel',            type=int,   default=16, help='The number of channels.')
   parser.add_argument('--num_cells',          type=int,   default=5, help='The number of cells in one stage.')
   parser.add_argument('--track_running_stats',type=int,   default=0, choices=[0,1],help='Whether use track_running_stats or not in the BN layer.')
-  parser.add_argument('--config_path',        type=str,   default="configs/research/nasnet-search-E250.config", help='The path of the configuration.')
+  parser.add_argument('--config_path',        type=str,   default="configs/research/possibility-E200.config", help='The path of the configuration.')
   parser.add_argument('--model_config',       type=str,   help='The path of the model configuration. When this arg is set, it will cover max_nodes / channels / num_cells.')
   # architecture leraning rate
   parser.add_argument('--arch_learning_rate', type=float, default=3e-4, help='learning rate for arch encoding')

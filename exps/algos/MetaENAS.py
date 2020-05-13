@@ -20,13 +20,12 @@ from models       import get_cell_based_tiny_net, get_search_spaces
 from nas_201_api  import NASBench201API as API
 import higher
 
-def meta_train_shared_cnn(xloader, shared_cnn, criterion, scheduler, optimizer, epoch_str, print_freq, logger):
+def meta_train_shared_cnn(xloader, shared_cnn, criterion, scheduler, optimizer, epoch_str, print_freq, logger, meta_info=(16, 1, 1.)):
   # MAML
   # Sampling: uniform
   data_time, batch_time = AverageMeter(), AverageMeter()
   losses, top1s, top5s, xend = AverageMeter(), AverageMeter(), AverageMeter(), time.time()
-  n_inner_iter = 1
-  n_task = 16
+  n_task, n_inner_iter, inner_lr_ratio = meta_info
   shared_cnn.train()
   optimizer.zero_grad()
   # for loop: n_iter -> n_task -> data batch
@@ -47,18 +46,18 @@ def meta_train_shared_cnn(xloader, shared_cnn, criterion, scheduler, optimizer, 
       qtargets = qtargets.cuda(non_blocking=True)
       # measure data loading time
       data_time.update(time.time() - xend)
-      inner_opt = torch.optim.SGD(shared_cnn.parameters(), lr=0.025)
-      with higher.innerloop_ctx(shared_cnn, inner_opt, copy_initial_weights=False) as (fmodel, diffopt):
+      inner_opt = torch.optim.SGD(shared_cnn.parameters(), lr=0.025 * inner_lr_ratio)
+      with higher.innerloop_ctx(shared_cnn, inner_opt, copy_initial_weights=False, track_higher_grads=True) as (fmodel, diffopt):
         for _ in range(n_inner_iter):
             _, logits = fmodel(inputs)
             loss      = criterion(logits, targets)
-            # torch.nn.utils.clip_grad_norm_(fmodel.parameters(), 5)
+            torch.nn.utils.clip_grad_norm_(fmodel.parameters(), 5)
             diffopt.step(loss)
 
         _, qlogits = fmodel(qinputs)
         qloss      = criterion(qlogits, qtargets)
-        # torch.nn.utils.clip_grad_norm_(fmodel.parameters(), 5)
         qloss.backward()
+        torch.nn.utils.clip_grad_norm_(fmodel.parameters(), 5)
 
         # record
         prec1, prec5 = obtain_accuracy(qlogits.data, qtargets.data, topk=(1, 5))
@@ -83,7 +82,6 @@ def meta_train_shared_cnn(xloader, shared_cnn, criterion, scheduler, optimizer, 
   return losses.avg, top1s.avg, top5s.avg
 
 def train_shared_cnn(xloader, shared_cnn, criterion, scheduler, optimizer, epoch_str, print_freq, logger):
-  # MAML
   # Sampling: uniform
   data_time, batch_time = AverageMeter(), AverageMeter()
   losses, top1s, top5s, xend = AverageMeter(), AverageMeter(), AverageMeter(), time.time()
@@ -103,7 +101,7 @@ def train_shared_cnn(xloader, shared_cnn, criterion, scheduler, optimizer, epoch
     _, logits = shared_cnn(inputs)
     loss      = criterion(logits, targets)
     loss.backward()
-    # torch.nn.utils.clip_grad_norm_(shared_cnn.parameters(), 5)
+    torch.nn.utils.clip_grad_norm_(shared_cnn.parameters(), 5)
     optimizer.step()
     # record
     prec1, prec5 = obtain_accuracy(logits.data, targets.data, topk=(1, 5))
@@ -123,13 +121,13 @@ def train_shared_cnn(xloader, shared_cnn, criterion, scheduler, optimizer, epoch
   return losses.avg, top1s.avg, top5s.avg
 
 
-def train_controller(xloader, w_loader, shared_cnn, controller, criterion, optimizer, w_optimizer, n_shot, config, epoch_str, print_freq, logger):
+def train_controller(xloader, w_loader, shared_cnn, controller, criterion, optimizer, meta_info, config, epoch_str, print_freq, logger):
   # config. (containing some necessary arg)
   #   baseline: The baseline score (i.e. average val_acc) from the previous epoch
   data_time, batch_time = AverageMeter(), AverageMeter()
   few_shot_time = AverageMeter()
   GradnormMeter, LossMeter, ValAccMeter, EntropyMeter, BaselineMeter, RewardMeter, xend = AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter(), AverageMeter(), time.time()
-
+  (n_shot, inner_lr_ratio) = meta_info
   controller.train()
   controller.zero_grad()
   #for step, (inputs, targets) in enumerate(xloader):
@@ -151,11 +149,11 @@ def train_controller(xloader, w_loader, shared_cnn, controller, criterion, optim
     if n_shot > 0:
         # shared_cnn.train()
         iloader_iter = iter(w_loader)
-        fs_end = time.time()
         idata_time, ibatch_time = AverageMeter(), AverageMeter()
         losses, top1s, top5s, iend = AverageMeter(), AverageMeter(), AverageMeter(), time.time()
-        # inner_opt = torch.optim.SGD(shared_cnn.parameters(), lr=0.25)
-        with higher.innerloop_ctx(shared_cnn, w_optimizer, track_higher_grads=False) as (fmodel, diffopt):
+        inner_opt = torch.optim.SGD(shared_cnn.parameters(), lr=0.025 * inner_lr_ratio)
+        fs_end = time.time()
+        with higher.innerloop_ctx(shared_cnn, inner_opt, copy_initial_weights=True, track_higher_grads=False) as (fmodel, diffopt):
             for istep in range(n_shot):
                 try:
                   t_inputs, t_targets = next(iloader_iter)
@@ -166,19 +164,16 @@ def train_controller(xloader, w_loader, shared_cnn, controller, criterion, optim
                 t_targets = t_targets.cuda(non_blocking=True)
                 # measure data loading time
                 idata_time.update(time.time() - iend)
-
                 # training
                 _, logits = fmodel(t_inputs)
                 loss      = criterion(logits, t_targets)
-                torch.nn.utils.clip_grad_norm_(fmodel.parameters(), 5)
+                # torch.nn.utils.clip_grad_norm_(fmodel.parameters(), 5)
                 diffopt.step(loss)
-
                 # record
                 prec1, prec5 = obtain_accuracy(logits.data, t_targets.data, topk=(1, 5))
                 losses.update(loss.item(),  t_inputs.size(0))
                 top1s.update (prec1.item(), t_inputs.size(0))
                 top5s.update (prec5.item(), t_inputs.size(0))
-
             # measure elapsed time
             ibatch_time.update(time.time() - iend)
             iend = time.time()
@@ -320,7 +315,8 @@ def main(xargs):
 
   train_data, test_data, xshape, class_num = get_datasets(xargs.dataset, xargs.data_path, -1)
   logger.log('use config from : {:}'.format(xargs.config_path))
-  config = load_config(xargs.config_path, {'class_num': class_num, 'xshape': xshape}, logger)
+  config = load_config(xargs.config_path, {'class_num': class_num, 'xshape': xshape}, None)
+  config = load_config(xargs.config_path, {'class_num': class_num, 'xshape': xshape, 'LR': config.LR * xargs.lr_ratio, 'eta_min': config.eta_min * xargs.lr_ratio}, logger)
   search_loader, train_loader, valid_loader = get_nas_search_loaders(train_data, test_data, xargs.dataset, 'configs/nas-benchmark/', config.batch_size, xargs.workers)
   # since ENAS will train the controller on valid-loader, we need to use train transformation for valid-loader
   valid_loader.dataset.transform = deepcopy(train_loader.dataset.transform)
@@ -395,6 +391,7 @@ def main(xargs):
   supernet_train_losses = []
   supernet_train_acc1 = []
   if not xargs.load_supernet:
+      meta_info = (xargs.n_task, xargs.n_inner_iter, xargs.inner_lr_ratio)
       for epoch in range(start_epoch, total_epoch):
         w_scheduler.update(epoch, 0.0)
         need_time = 'Time Left: {:}'.format( convert_secs2time(epoch_time.val * (total_epoch-epoch), True) )
@@ -403,7 +400,7 @@ def main(xargs):
         if 'nometa' in xargs.exp_name:
             cnn_loss, cnn_top1, cnn_top5 = train_shared_cnn(train_loader, shared_cnn, criterion, w_scheduler, w_optimizer, epoch_str, xargs.print_freq, logger)
         else:
-            cnn_loss, cnn_top1, cnn_top5 = meta_train_shared_cnn(search_loader, shared_cnn, criterion, w_scheduler, w_optimizer, epoch_str, xargs.print_freq, logger)
+            cnn_loss, cnn_top1, cnn_top5 = meta_train_shared_cnn(search_loader, shared_cnn, criterion, w_scheduler, w_optimizer, epoch_str, xargs.print_freq, logger, meta_info=meta_info)
         supernet_train_losses.append(cnn_loss)
         supernet_train_acc1.append(cnn_top1)
         supernet_train_time.update(time.time() - start_time)
@@ -440,14 +437,14 @@ def main(xargs):
   # start search
   start_time, search_time, epoch_time, total_few_shot_time, total_epoch = time.time(), AverageMeter(), AverageMeter(), AverageMeter(), config.search_epochs
   eval_time = AverageMeter()
-  n_shot = xargs.n_shot
+  meta_info = (xargs.n_shot, xargs.inner_lr_ratio)
   for epoch in range(start_epoch, total_epoch):
     need_time = 'Time Left: {:}'.format( convert_secs2time(epoch_time.val * (total_epoch-epoch), True) )
     epoch_str = '{:03d}-{:03d}'.format(epoch, total_epoch)
     logger.log('\n[Search the {:}-th epoch] {:}, baseline={:}'.format(epoch_str, need_time, baseline))
     # training controller
     ctl_loss, ctl_acc, ctl_baseline, ctl_reward, baseline, few_shot_time \
-                                 = train_controller(valid_loader, train_loader, shared_cnn, controller, criterion, a_optimizer, w_optimizer, n_shot, \
+                                 = train_controller(valid_loader, train_loader, shared_cnn, controller, criterion, a_optimizer, meta_info, \
                                                         dict2config({'baseline': baseline,
                                                                      'ctl_train_steps': xargs.controller_train_steps, 'ctl_num_aggre': xargs.controller_num_aggregate,
                                                                      'ctl_entropy_w': xargs.controller_entropy_weight,
@@ -523,13 +520,18 @@ if __name__ == '__main__':
   # channels and number-of-cells
   parser.add_argument('--track_running_stats',type=int,   default=0, choices=[0,1],help='Whether use track_running_stats or not in the BN layer.')
   parser.add_argument('--search_space_name',  type=str,   default="nas-bench-201", help='The search space name.')
-  parser.add_argument('--max_nodes',          type=int,   default=4, help='The maximum number of nodes.')
-  parser.add_argument('--channel',            type=int,   default=12, help='The number of channels.')
-  parser.add_argument('--num_cells',          type=int,   default=2, help='The number of cells in one stage.')
-  parser.add_argument('--n_shot',             type=int,   default=1, help='The number of few-shot training step.')
+  parser.add_argument('--max_nodes',          type=int,   default=4,  help='The maximum number of nodes.')
+  parser.add_argument('--channel',            type=int,   default=16, help='The number of channels.')
+  parser.add_argument('--num_cells',          type=int,   default=2,  help='The number of cells in one stage.')
+  parser.add_argument('--n_shot',             type=int,   default=1)
+  parser.add_argument('--n_task',             type=int,   default=16)
+  parser.add_argument('--n_inner_iter',       type=int,   default=1)
+  parser.add_argument('--inner_lr_ratio',     type=float, default=1.)
+  parser.add_argument('--lr_ratio',           type=float, default=1.)
+
   parser.add_argument('--config_path',        type=str,   default="./configs/research/MetaENAS250.config", help='The config file to train ENAS.')
-  parser.add_argument('--controller_train_steps',    type=int,    default=5,       help='.')
-  parser.add_argument('--controller_num_aggregate',  type=int,    default=10,      help='.')
+  parser.add_argument('--controller_train_steps',    type=int,    default=10,       help='.')
+  parser.add_argument('--controller_num_aggregate',  type=int,    default=2,      help='.')
   parser.add_argument('--controller_entropy_weight', type=float,  default=0.0001,  help='The weight for the entropy of the controller.')
   parser.add_argument('--controller_bl_dec'        , type=float,  default=0.99,    help='.')
   parser.add_argument('--controller_num_samples'   , type=int,    default=100,     help='.')
@@ -542,5 +544,5 @@ if __name__ == '__main__':
   args = parser.parse_args()
   if args.rand_seed is None or args.rand_seed < 0: args.rand_seed = random.randint(1, 100000)
   if args.exp_name != "":
-      args.save_dir = "./output/search-cell-{}/MetaENAS-{}-BN{}/{}".format(args. search_space_name, args.dataset, args.track_running_stats, args.exp_name)
+      args.save_dir = "./output/search-cell-{}/MetaENAS-{}-BN{}/{}".format(args.search_space_name, args.dataset, args.track_running_stats, args.exp_name)
   main(args)

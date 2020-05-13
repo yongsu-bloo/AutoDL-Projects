@@ -162,7 +162,13 @@ def main(args):
       search_scope = checkpoint['search_scope']
       logger.log("***Search Scope found***")
   elif n_top:
-      all_archs = list_arch(api, xargs.dataset, 'ori-test')
+      # all_archs = list_arch(api, xargs.dataset, 'ori-test')
+      arch_path = os.environ['TORCH_HOME'] + "/all_archs-{}-test.pt".format(args.dataset)
+      if os.path.isfile(arch_path):
+          all_archs = torch.load(arch_path)["all_archs"]
+      else:
+          all_archs = list_arch(api, args.dataset, 'ori-test')
+          save_checkpoint({'all_archs': all_archs}, arch_path, logger)
       pick_top = True
       if n_top < 0: # random pick
         n_top = -n_top
